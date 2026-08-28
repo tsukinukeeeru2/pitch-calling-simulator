@@ -1,0 +1,271 @@
+"""試合状況(MatchState)と、終盤の場面をランダムに作る generate_random_situation()。
+
+このゲームの 1 プレイ = 「終盤のある半イニングで 3 アウトを取るまで」。
+
+MatchState は judge.py が期待する属性
+  batter / pitcher / defense / history / balls / strikes / outs / runners / score_diff
+をそのまま持つ(judge.py は MatchState を直接は import しない)。
+"""
+
+import random
+
+from defense import make_default_defense
+from lineup import Lineup, build_sample_lineup
+from pitch_history import PitchHistory
+from pitcher import build_sample_pitcher
+
+INNING_CHOICES = [7, 8, 9, 10]          # 10 = 延長
+INNING_WEIGHTS = [3, 3, 3, 1]
+DIFF_CHOICES = [-3, -2, -1, 0, 1, 2, 3]  # 自軍 - 相手
+DIFF_WEIGHTS = [1, 2, 4, 5, 4, 2, 1]     # 接戦(-1/0/+1)が出やすい
+OUT_CHOICES = [0, 1, 2]
+OUT_WEIGHTS = [5, 3, 2]
+
+
+class MatchState:
+    def __init__(self, inning, is_extra, half, we_are, our_score, opp_score,
+                 outs, runners, lineup, pitcher, defense):
+        self.inning = inning
+        self.is_extra = is_extra
+        self.half = half                 # "top"(表) / "bottom"(裏)
+        self.we_are = we_are             # 守備側は自軍。"HOME" / "AWAY"
+        self.our_score = our_score
+        self.opp_score = opp_score
+        self.start_our = our_score        # 開始時スコア(最後の判定用に保存)
+        self.start_opp = opp_score
+        self.outs = outs
+        self.runners = list(runners)
+        self.balls = 0
+        self.strikes = 0
+        self.lineup = lineup
+        self.pitcher = pitcher
+        self.defense = defense
+        self.history = PitchHistory()
+        self.runs_this_inning = 0
+        self.pitch_log = []              # 1 球 = dict。試合後分析に使う
+        self.spray = []                  # フェア打球の記録(#B 打球傾向チャート)
+        self.reads = {}                  # 捕手メモ id(batter) -> {"spot","wait","weak"}
+        self.bullpen = None              # 継投用の控え投手(main が用意)
+        self.pitching_changes = 0
+        self.events = []                 # 盗塁など、打席途中の出来事のログ
+
+    # ---- judge.py が使う ----
+    @property
+    def batter(self):
+        return self.lineup.current()
+
+    # ---- 捕手メモ(#B) ----
+    def record_read(self, wait=None, weak=None):
+        note = self.reads.setdefault(id(self.batter), {"spot": self.lineup.spot_number(),
+                                                       "wait": None, "weak": None})
+        if wait is not None:
+            note["wait"] = wait
+        if weak is not None:
+            note["weak"] = weak
+
+    def current_read(self):
+        return self.reads.get(id(self.batter))
+
+    def spray_add(self, batted_ball, result):
+        self.spray.append({
+            "direction": batted_ball.direction,
+            "ball_type": batted_ball.ball_type,
+            "distance": batted_ball.distance,
+            "bats": self.batter.bats,
+            "result": result,
+        })
+
+    # ---- 継投(#ゲーム性) ----
+    def can_change_pitcher(self):
+        return self.pitching_changes == 0 and self.bullpen is not None
+
+    def change_pitcher(self):
+        """控え投手に交代(この 1 ゲームで 1 回だけ)。球数はリセットされる。"""
+        if not self.can_change_pitcher():
+            return False
+        self.pitcher, self.bullpen = self.bullpen, self.pitcher
+        self.pitching_changes += 1
+        return True
+
+    # ---- 敬遠(#ゲーム性) ----
+    def intentional_walk(self):
+        """申告敬遠。打者を歩かせる(押し出しあり)。次打者へ。"""
+        self.events.append("敬遠")
+        self.advance_on_walk()
+
+    # ---- 盗塁(#ゲーム性・軽量モデル) ----
+    def steal_chance(self, rng):
+        """この球で盗塁を仕掛けるか(一塁走者だけ・二塁が空き・2アウト未満)。"""
+        if not (self.runners[0] and not self.runners[1]) or self.outs >= 2:
+            return False
+        return rng.random() < 0.14
+
+    def resolve_steal(self, pitch_family, rng, throw_bonus=0.0):
+        """盗塁の成否を決める(steal_chance が True のときに呼ぶ)。
+
+        safe_p(セーフ確率) = 0.58
+          - 速球なら捕手が刺しやすい (-0.12) / 変化球・ワンバウンドは間に合わない (+0.10)
+          - throw_bonus は捕手の送球のうまさ(QTE の結果)。大きいほど刺しやすい。
+        返り値: 出来事の文字列 or None。状態はここで書き換える。
+        """
+        if not (self.runners[0] and not self.runners[1]) or self.outs >= 2:
+            return None
+        safe_p = 0.58
+        safe_p += -0.12 if pitch_family == "fastball" else 0.10
+        safe_p -= throw_bonus
+        if rng.random() < max(0.05, min(0.95, safe_p)):
+            self.runners = [False, True, self.runners[2]]
+            self.events.append("盗塁成功")
+            return "盗塁成功（走者二塁へ）"
+        self.runners[0] = False
+        self.outs += 1                               # 打者はそのまま。走者アウト
+        self.events.append("盗塁刺")
+        return "盗塁を刺した！"
+
+    # ---- ワンバウンド / 暴投のブロッキング(#ゲーム性) ----
+    def resolve_block(self, block_bonus, rng, hard=False):
+        """止められたか。止め損なうと走者が 1 つ進む(後逸)。
+
+        pass_p(後逸する確率) = 0.45 - block_bonus (+ 0.12 if hard)
+          block_bonus は捕手のブロッキングのうまさ(QTE の結果)。大きいほど止まる。
+          hard は「隅への低め」など体を大きく動かす球。
+        返り値: 出来事の文字列 or None。
+        """
+        if not any(self.runners):
+            return None
+        pass_p = max(0.03, min(0.9, 0.45 - block_bonus + (0.12 if hard else 0.0)))
+        if rng.random() >= pass_p:
+            return None                              # 止めた
+        if self.runners[2]:
+            self._score_runs(1)
+        self.runners = [False, self.runners[0], self.runners[1]]
+        self.events.append("後逸")
+        return "後逸！ 走者が進んだ"
+
+    @property
+    def score_diff(self):
+        return self.our_score - self.opp_score
+
+    # ---- カウント / 打者交代 ----
+    def reset_count(self):
+        self.balls = 0
+        self.strikes = 0
+
+    def next_batter(self):
+        self.reset_count()
+        self.history.clear()
+        self.lineup.advance()
+
+    def add_out(self):
+        self.outs += 1
+        if self.outs < 3:
+            self.next_batter()
+
+    # ---- 失点(相手が打っている) ----
+    def _score_runs(self, n):
+        self.opp_score += n
+        self.runs_this_inning += n
+
+    def apply_play(self, play):
+        """baserunning.resolve() の結果(フェア打球のあとの走塁)をまとめて反映する。"""
+        self.runners = list(play["new_runners"])
+        self._score_runs(play["runs"])
+        self.outs = min(3, self.outs + play["outs_added"])
+        if not self.is_over():
+            self.next_batter()
+
+    def advance_on_walk(self):
+        if self.runners[0] and self.runners[1] and self.runners[2]:
+            self._score_runs(1)
+        elif self.runners[0] and self.runners[1]:
+            self.runners[2] = True
+        elif self.runners[0]:
+            self.runners[1] = True
+        self.runners[0] = True
+        self.next_batter()
+
+    # ---- 終了判定 ----
+    def is_over(self):
+        return self.outs >= 3
+
+    def game_over(self):
+        return self.is_over()
+
+    # ---- 表示・集計 ----
+    def half_label(self):
+        return "表" if self.half == "top" else "裏"
+
+    def inning_label(self):
+        if self.is_extra:
+            return f"延長{self.inning}回{self.half_label()}"
+        return f"{self.inning}回{self.half_label()}"
+
+    def runners_text(self):
+        labels = ["1B", "2B", "3B"]
+        on = [labels[i] for i in range(3) if self.runners[i]]
+        return "なし" if not on else "・".join(on)
+
+    def result_summary(self):
+        runs = self.runs_this_inning
+        run_txt = "無失点" if runs == 0 else ("1失点" if runs == 1 else f"{runs}失点（複数失点）")
+
+        start_lead = self.start_our - self.start_opp
+        end_lead = self.our_score - self.opp_score
+        if start_lead > 0:
+            if end_lead > 0:
+                status = "リード維持"
+            elif end_lead == 0:
+                status = "同点に追いつかれた"
+            else:
+                status = "逆転された"
+        elif start_lead == 0:
+            status = "同点を維持" if end_lead == 0 else ("勝ち越された" if end_lead < 0 else "勝ち越した")
+        else:  # 開始時ビハインド
+            if end_lead >= 0:
+                status = "追いついた・勝ち越した"
+            elif end_lead > start_lead:
+                status = "さらに離された" if runs else "点差そのまま"
+            else:
+                status = "点差そのまま" if runs == 0 else "さらに離された"
+        return run_txt, status
+
+
+def _weighted(rng, choices, weights):
+    return rng.choices(choices, weights=weights, k=1)[0]
+
+
+def generate_random_situation(rng=None, lineup_batters=None):
+    """毎回違う「終盤の 1 場面」を作る。
+
+    lineup_batters : 9 人の Batter を渡すと、その打線を使う(#C 実データ差し替え)。
+                     省略すると build_sample_lineup() の架空 9 人。
+    """
+    rng = rng or random
+
+    inning = _weighted(rng, INNING_CHOICES, INNING_WEIGHTS)
+    is_extra = inning >= 10
+    half = rng.choice(["top", "bottom"])
+    we_are = "HOME" if half == "top" else "AWAY"   # 守るのは自軍
+
+    diff = _weighted(rng, DIFF_CHOICES, DIFF_WEIGHTS)
+    opp_base = rng.randint(1, 5)
+    our_score = opp_base + diff
+    opp_score = opp_base
+    if our_score < 0:                # 0 を下回らないよう両方を持ち上げる
+        opp_score -= our_score
+        our_score = 0
+
+    outs = _weighted(rng, OUT_CHOICES, OUT_WEIGHTS)
+    on_base_p = 0.30 if outs == 0 else 0.38
+    runners = [rng.random() < on_base_p for _ in range(3)]
+
+    start_index = rng.randrange(9)
+    batters = lineup_batters if lineup_batters is not None else build_sample_lineup(rng)
+    lineup = Lineup(list(batters), index=start_index)
+    pitcher = build_sample_pitcher(rng)
+    defense = make_default_defense()
+
+    state = MatchState(inning, is_extra, half, we_are, our_score, opp_score,
+                       outs, runners, lineup, pitcher, defense)
+    state.bullpen = build_sample_pitcher(rng)   # 継投用の控え
+    return state
