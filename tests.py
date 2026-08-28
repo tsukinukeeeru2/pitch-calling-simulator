@@ -9,7 +9,13 @@
 
 import io
 import random
+import re
+import socket
+import socketserver
+import threading
 import unittest
+import urllib.parse
+import urllib.request
 from contextlib import redirect_stdout
 
 from baserunning import resolve as resolve_baserunning
@@ -40,6 +46,7 @@ import replay
 import stats
 from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
 from ui import render_analysis, render_dashboard, render_intro, render_play_result, render_spray
+import webapp
 
 VALID_RESULTS = {"ストライク", "ボール", "空振り", "ファウル", "アウト",
                  "単打", "二塁打", "三塁打", "本塁打"}
@@ -932,6 +939,87 @@ class ReplayTests(unittest.TestCase):
               "pitches": [self._entry(1, "ボール", 0.0)]}
         out = replay.render_replay(log)
         self.assertIn("目立った場面はありませんでした", out)
+
+
+# ---------- 軽量Web UI(webapp.py) ----------
+class WebAppTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        cls.port = sock.getsockname()[1]
+        sock.close()
+        webapp.SESSION = webapp.GameSession()
+        cls.httpd = socketserver.TCPServer(("127.0.0.1", cls.port), webapp.Handler)
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.base = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        webapp.SESSION.new_game()
+
+    def _get(self, path=""):
+        with urllib.request.urlopen(self.base + path) as r:
+            return r.read().decode("utf-8")
+
+    def _post(self, path, data):
+        body = urllib.parse.urlencode(data).encode()
+        req = urllib.request.Request(self.base + path, data=body, method="POST")
+        with urllib.request.urlopen(req) as r:
+            return r.status
+
+    def _first_pitch_key(self, page):
+        m = re.search(r'name="pitch_type">.*?<option value="([^"]+)"', page, re.S)
+        return m.group(1)
+
+    def test_get_root_renders_the_pitch_call_form(self):
+        page = self._get("/")
+        self.assertIn("終盤の守り切りゲーム", page)
+        self.assertIn('action="/pitch"', page)
+        self.assertIn("投球", page)
+
+    def test_post_pitch_advances_the_count_or_the_at_bat(self):
+        page = self._get("/")
+        pitch_key = self._first_pitch_key(page)
+        status = self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid",
+                                       "intent": "strike"})
+        self.assertEqual(status, 200)
+        page2 = self._get("/")
+        self.assertIn("カウント", page2)
+
+    def test_qte_is_forced_off_for_the_web_process(self):
+        self.assertFalse(webapp.SESSION.state is None)
+        import qte
+        self.assertFalse(qte.qte_enabled())
+
+    def test_driving_pitches_eventually_reaches_the_analysis_page(self):
+        rng = random.Random(0)
+        page = self._get("/")
+        for _ in range(200):
+            if "配球のふり返り" in page:
+                break
+            pitch_key = self._first_pitch_key(page)
+            self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid",
+                                  "intent": "strike"})
+            page = self._get("/")
+        else:
+            self.fail("200球投げてもイニングが終わらなかった")
+        self.assertIn("もう一度プレイ", page)
+
+        self._post("/newgame", {})
+        fresh = self._get("/")
+        self.assertNotIn("配球のふり返り", fresh)
+        self.assertIn('action="/pitch"', fresh)
+
+    def test_alignment_change_is_reflected(self):
+        status = self._post("/alignment", {"alignment": "bunt"})
+        self.assertEqual(status, 200)
+        self.assertEqual(webapp.SESSION.state.defense.alignment, "bunt")
 
 
 # ---------- 9 分割ゾーン ----------

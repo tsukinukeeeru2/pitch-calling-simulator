@@ -37,6 +37,7 @@ python main.py --difficulty beginner             # ヒント多め / expert で�
 python tests.py                                  # 自動テスト（末尾に 1000 ゲームのストレス）
 python stats.py                                  # logs/ を集計した成績ダッシュボード
 python replay.py                                 # 直近のゲームを名場面だけリプレイ
+python webapp.py                                 # ブラウザ版（http://127.0.0.1:8765）
 ```
 
 - 色: 端末なら自動 ON。パイプ時 OFF。`PITCHSIM_COLOR=1` 強制 ON / `NO_COLOR` 強制 OFF。
@@ -83,6 +84,7 @@ python replay.py                                 # 直近のゲームを名場�
 |---|---|
 | `stats.py` | `logs/game_*.json` を横断集計する成績ダッシュボード（コース別/意図別の被弾率・decision_quality） |
 | `replay.py` | 1 ゲームのログを名場面だけ時系列で振り返るリプレイビューア（`strategy.build_analysis()` の分類を再利用） |
+| `webapp.py` | ブラウザで遊べる軽量 Web UI（標準ライブラリの `http.server` のみ、追加インストール不要）。`main.resolve_one_pitch()` をそのまま再利用し、HTML で組み立て直すだけ |
 
 ### データ
 
@@ -116,6 +118,7 @@ python replay.py                                 # 直近のゲームを名場�
 - [x] 成績ダッシュボード `stats.py`（複数ゲームログをコース別/意図別に集計、被弾率・decision_quality）
 - [x] リプレイビューア `replay.py`（1ゲームの名場面を時系列で振り返り、build_analysis()の分類を再利用）
 - [x] 難易度設定 `--difficulty beginner/normal/expert`（beginner はヒント表示追加、expert は打球チャート非表示。隠しパラメータには一切触れない）
+- [x] 軽量Web UI `webapp.py`（標準ライブラリの `http.server` のみ、Tkinter不採用。QTEはHTTPリクエストでは成立しないため常にOFFで確率モデルに任せる。守備の選手入れ替え・読みメモは未対応でCLI版のみ）
 - [x] リズム / QTE：盗塁刺し（①反応 ②連打 ③送球リズム）、ブロッキング（方向ボタン 内/中/外 ＋ 1・2・3 リズム）、投手の暴投も同じブロッキング
 - [x] 試合後分析（結果 と 判断の質 を分けて評価）、読みメモの採点
 - [x] 色つき UI、打球チャート（ゲーム中に傾向が溜まる）
@@ -127,10 +130,12 @@ python replay.py                                 # 直近のゲームを名場�
 - [ ] `@dataclass` 化（可読性。振る舞いを変えない大量書き換えなので後回しにしている）
 - [ ] 盗塁で個々の走者の足を使う（今は平均値。走者の identity を持っていない）
 - [ ] 中継・カットプレー、犠打・エンドラン
-- [ ] 複数イニング / 1 試合フルのモード
+- [ ] 複数イニング / 1 試合フルのモード（**見送り中**。自軍の打撃が今は完全に未実装なので、
+      フル実装は「自軍の打撃を作る」か「攻撃側イニングを自動スキップする」かの設計判断が要る、
+      規模の大きい新規サブシステムになる）
 - [ ] MLB Stats API / Baseball Savant の実データ取得（今は差し替え口だけ用意済み）
 - [ ] 投手の左右をスコアボードでもっと目立たせる、投手交代の選択肢を複数に
-- [ ] Tkinter などでの GUI（表示層は分離済み）
+- [ ] Web UI（`webapp.py`）に守備の選手入れ替え（Swap）と捕手メモ機能を追加（今は CLI 版のみ）
 
 ---
 

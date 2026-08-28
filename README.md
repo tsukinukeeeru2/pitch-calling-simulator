@@ -27,6 +27,7 @@ python main.py --lineup lineups/sample_team.json # 相手打線を差し替え�
 python tests.py                                  # 自動テスト（最後に 1000 ゲームのストレステスト）
 python stats.py                                  # logs/ を集計した成績ダッシュボード
 python replay.py                                 # 直近のゲームを名場面だけリプレイ
+python webapp.py                                 # ブラウザ版（http://127.0.0.1:8765）
 ```
 
 `--difficulty beginner`（ヒント表示を追加）/ `--difficulty expert`（打球チャートを隠す）で難易度を選べます（既定 `normal`、`PITCHSIM_DIFFICULTY` でも指定可）。
@@ -76,6 +77,7 @@ python replay.py                                 # 直近のゲームを名場�
 |---|---|
 | `stats.py` | `logs/game_*.json` を横断集計する成績ダッシュボード（コース別/意図別の被弾率・decision_quality） |
 | `replay.py` | 1 ゲームのログを名場面だけ時系列で振り返るリプレイビューア（`strategy.build_analysis()` の分類を再利用） |
+| `webapp.py` | ブラウザで遊べる軽量 Web UI（標準ライブラリの `http.server` のみ）。`main.resolve_one_pitch()` を再利用し、HTML で組み立て直すだけ |
 
 ### データ
 
@@ -341,6 +343,19 @@ Pitch Call（要求）→ execute_pitch() → Actual Pitch（実際）→ Batter
 ### 色（`ansi.py`）
 `sys.stdout.isatty()` で自動判定。パイプ・`NO_COLOR`・`TERM=dumb` で無効、`PITCHSIM_COLOR=1` で強制有効。
 アウト＝緑 / 安打＝赤 / ボール＝黄 / ストライク＝シアン、顔文字はカテゴリ別の色、弱い野手は赤。
+
+### F. Web UI（`webapp.py`）
+`python webapp.py` でブラウザ版が起動します（`http://127.0.0.1:8765`、`--port` で変更可）。
+
+* **標準ライブラリの `http.server` のみ**（Flask 等を追加インストールしない）。ゲームロジックは
+  `main.resolve_one_pitch()` をそのまま再利用し、ANSI の代わりに HTML を組み立てるだけ ―
+  「表示層を差し替えれば GUI 化できる」という元々の設計方針そのもの。
+* 1 リクエスト = フォーム送信（球種・コース・意図をまとめて選んで「投球」）。ページ全体を素の HTML/CSS
+  だけで組んでおり、JavaScript は使っていない。
+* QTE（リズムミニゲーム）は HTTP のリクエスト/レスポンスでは体で覚える系の入力ができないため、
+  `webapp.py` は起動時に `PITCHSIM_QTE=0` を強制し、常に確率モデルに任せる。
+* **CLI 版との差分**：守備の選手入れ替え（Swap）と捕手メモ（読みの記録・採点）は未対応。
+  守備シフトの変更・敬遠・継投・打球チャートはブラウザ版でも操作できる。
 
 ## 守備確率（前バージョンから）— `fielding.resolve_batted_ball()`
 
