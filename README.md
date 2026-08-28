@@ -20,64 +20,103 @@
 **プレイ中に正解は表示されません。** 打者の顔文字・反応、配球履歴、打者の左右/OPS、守備力から自分で読みます。
 振り返り（結果と判断を分けた分析）は**3 アウト後だけ**表示されます。
 
-|  |  |
-|---|---|
-| ![CLI版のプレイ画面](screenshots/cli.png) | ![Web版のプレイ画面](screenshots/web_play.png) |
-| CLI 版（`main.py`） | Web 版（`webapp.py`） |
+**一番のおすすめは Web 版（`webapp.py`）です。** 野球中継のアナリティクス画面に近いレイアウトで、
+球場図の守備配置・ストライクゾーン上の Target/Actual・打者カード・配球履歴・Postgame Report
+（Catcher Report）まで、ブラウザだけで完結します。CLI 版（`main.py`）は元々のテキスト版として残しています。
 
-![試合後の配球のふり返り（Web版）](screenshots/web_analysis.png)
-*3 アウト後だけ表示される「結果と判断は別ものとして評価」する振り返り画面。*
+![Web版のプレイ画面](screenshots/web_play.png)
+*スコアボード・球場図（クリック→クリックで守備Swap）・打者カード・Pitch Call フォーム・配球履歴を1画面に。*
+
+![Pitch Call → Actual Pitch](screenshots/web_target_actual.png)
+*要求した場所（Target）と実際の投球（Actual）をストライクゾーン上の別マーカーで表示。
+「良い配球を要求したのに投手が失投した」が一目で分かる。*
+
+![Postgame Report（Catcher Report）](screenshots/web_analysis.png)
+*3 アウト後だけ表示される Catcher Report。GOOD CALL/BAD RESULT・BAD CALL/GOOD RESULT を区別し、
+Decision Quality・Pitch Execution・Defense を別軸で評価する。*
+
+![CLI版のプレイ画面](screenshots/cli.png)
+*CLI版（`main.py`）。Web版と同じ `engine.py` を呼ぶだけなので判定ロジックは完全に共通。*
 
 ```bash
 cd pitch-calling-simulator
-python main.py                                   # プレイ
+python webapp.py                                 # おすすめ: ブラウザ版（http://127.0.0.1:8765）
+python webapp.py --mlb-demo                      # 実在選手のサンプル打線で遊ぶ(#MLBデータ)
+python webapp.py --seed 12345                    # 場面・投球判定を再現可能にする
+python main.py                                   # CLI版
 python main.py --lineup lineups/sample_team.json # 相手打線を差し替えて（#C）
 python tests.py                                  # 自動テスト（最後に 1000 ゲームのストレステスト）
 python stats.py                                  # logs/ を集計した成績ダッシュボード
 python replay.py                                 # 直近のゲームを名場面だけリプレイ
-python webapp.py                                 # ブラウザ版（http://127.0.0.1:8765）
 ```
 
 `--difficulty beginner`（ヒント表示を追加）/ `--difficulty expert`（打球チャートを隠す）で難易度を選べます（既定 `normal`、`PITCHSIM_DIFFICULTY` でも指定可）。
 どの難易度でも隠しパラメータ（狙い球のクセ・weak_course など）自体には一切触れません。
 
-プレイ中の操作: `Enter`=投球 / `d`=守備変更 / `m`=打者の読みをメモ / `w`=敬遠（一塁が空いているとき）/ `p`=継投（1回だけ）/ `q`=終了。
+CLI版の操作: `Enter`=投球 / `d`=守備変更 / `m`=打者の読みをメモ / `w`=敬遠（一塁が空いているとき）/ `p`=継投（1回だけ）/ `q`=終了。
 投球は「球種 → コース（3×3 グリッド）→ 配球意図」。
 色は自動で付きます（パイプ・リダイレクト時は自動オフ。`PITCHSIM_COLOR=1` で強制オン、`NO_COLOR` で強制オフ）。
 
 ---
 
+## アーキテクチャ — Game Engine を CLI と Web で共有する
+
+```
+        Game Engine
+   (engine.py が judge.py 以下を呼ぶ)
+        ↑            ↑
+     main.py      webapp.py
+     (CLI版)       (Web版)
+```
+
+`engine.py` の `resolve_one_pitch(state, pitch_type, course, intent, rng)` が「1 球を判定して
+状態を進める」唯一の入口。振り逃げ・ブロッキング・盗塁・サイン盗み見といった投球後の周辺イベントも
+ここで解決する。`main.py`（CLI）と `webapp.py`（Web）はどちらもこの関数を呼ぶだけで、
+判定ロジックを二重実装していない。表示だけが違う（CLIは`print()`、Webは`メッセージのリスト`をHTML化）。
+
+乱数は `--seed N` で固定できる。`engine.resolve_one_pitch()` が同じ `random.Random(N)` を最初から
+最後まで受け取って進むので、同じ seed・同じ選択なら CLI でも Web でも同じ結果になる
+（テスト `test_same_seed_gives_same_engine_result_cli_and_web_share` / `test_seed_reproducible_over_http`）。
+
+---
+
 ## ファイル構成
 
-### ゲームロジック（UI に依存しない層）
+### Game Engine（CLI・Web 共通、表示に依存しない層）
 
 | ファイル | 役割 |
 |---|---|
+| `engine.py` | **`resolve_one_pitch()`**（1球を判定して状態を進める唯一の入口）。CLI/Webはここだけを呼ぶ |
 | `match_state.py` | **`MatchState`**（試合状況）と `generate_random_situation()`（終盤の場面をランダム生成） |
 | `lineup.py` | 相手打線 9 人（archetype）／`Lineup`（打順の回転）／CSV・JSON 読み込み口 |
-| `pitcher.py` | **`Pitcher`** と `execute_pitch()`（要求 → 実際の投球。失投でコースがズレる） |
-| `batter.py` | **`Batter`**（公開: 左右・OPS・タイプ／隠し: 苦手球種・狙い球のクセ 等）と `predict_guess()` |
+| `pitcher.py` | **`Pitcher`**（@dataclass）と `execute_pitch()`（要求 → 実際の投球。失投でコースがズレる） |
+| `batter.py` | **`Batter`**（@dataclass。公開: 左右・OPS・タイプ／隠し: 苦手球種・狙い球のクセ 等）と `predict_guess()` |
 | `pitch_data.py` | **球種のデータ**。ここに 1 行足すだけで球種が増える |
-| `strategy.py` | 配球意図・**セットアップ（前球が次を活かす）**・**Catcher Decision Quality**・試合後分析 |
+| `strategy.py` | 配球意図・**セットアップ（前球が次を活かす）**・**Catcher Decision Quality**・試合後分析・**Postgame Report集計** |
 | `pitch_history.py` | 配球履歴（投げた球を順に記録し、連続数などを答えるだけ） |
 | `judge.py` | 1 球の判定。実投球 → 狙い → セットアップ → タイミング → 振る/見る → フェアなら打球＋守備＋走塁 |
-| `batted_ball.py` | フェア打球の中身（方向 / 種類 / 強さ / 飛距離）を確率生成 |
+| `batted_ball.py` | **`BattedBall`**（@dataclass）。フェア打球の中身（方向 / 種類 / 強さ / 飛距離）を確率生成 |
 | `baserunning.py` | フェア打球後の走塁（長打の進塁・併殺・犠飛・タッチアップ・進塁打）を状態を変えずに解決 |
-| `fielders.py` | `Fielder` と **`position_fit`**（同じ選手でもポジションで守備力が変わる） |
+| `fielders.py` | **`Fielder`**（@dataclass）と **`position_fit`**（同じ選手でもポジションで守備力が変わる） |
 | `defense.py` | `Defense`（7 人の割り当て・守備シフト・EDE 参考値） |
 | `fielding.py` | 打球＋守備配置 → アウト/ヒット（加算式・内訳つき） |
 | `reaction.py` | **打者の反応（顔文字 + 短文 + カテゴリ）**。隠し情報は見ない。確率的にしか本音を出さない |
 | `constants.py` | コース・反応確率など共通データ |
 
-### 表示層（差し替えれば GUI 化できる）
+`@dataclass` は「データを保持するのが主目的」な4クラス（Batter/Pitcher/Fielder/BattedBall）だけに
+適用した。`MatchState`（30以上のメソッドで自身を書き換える）や `judge_pitch()` の戻り値（枝分かれで
+キーの有無が変わる）は対象外 ―― dataclass化してもメリットが薄いと判断したため、意図的にそのまま。
+
+### 表示層（CLI と Web、それぞれ Game Engine を呼ぶだけ）
 
 | ファイル | 役割 |
 |---|---|
+| `main.py` | **CLI 版**の進行役。入力・`--lineup`/`--mlb-demo`/`--seed` 読込・ゲームログ保存・`ui.py` を呼んで表示 |
+| `webapp.py` | **Web 版**。標準ライブラリの `http.server` のみ（追加インストール不要）。JavaScript は使わずフォーム送信だけで組んでいる |
 | `ansi.py` | 端末の色付けヘルパー（パイプ時は自動で無効） |
-| `qte.py` | 送球・ブロッキングのリズム / QTE ミニゲーム（非対話時は自動スキップ） |
-| `ballpark_view.py` | 守備位置を「球場を上から見た図」の色付き文字列に |
-| `ui.py` | スコアボード・ベース図・打者カード・**打球チャート**・1 球結果・試合後分析 |
-| `main.py` | 進行役。入力・`--lineup` 読込・ゲームログ保存・上を呼んで表示 |
+| `qte.py` | 送球・ブロッキングのリズム / QTE ミニゲーム（非対話時・Web版は自動スキップ） |
+| `ballpark_view.py` | CLI用。守備位置を「球場を上から見た図」の色付き文字列に |
+| `ui.py` | CLI用。スコアボード・ベース図・打者カード・**打球チャート**・1 球結果・試合後分析 |
 
 ### ツール
 
@@ -85,13 +124,14 @@ python webapp.py                                 # ブラウザ版（http://127.
 |---|---|
 | `stats.py` | `logs/game_*.json` を横断集計する成績ダッシュボード（コース別/意図別の被弾率・decision_quality） |
 | `replay.py` | 1 ゲームのログを名場面だけ時系列で振り返るリプレイビューア（`strategy.build_analysis()` の分類を再利用） |
-| `webapp.py` | ブラウザで遊べる軽量 Web UI（標準ライブラリの `http.server` のみ）。`main.resolve_one_pitch()` を再利用し、HTML で組み立て直すだけ |
+| `mlb_data_adapter.py` | 実在選手データ → Batter の Adapter。外部データ形式を Game Engine に直接依存させない（詳細は後述） |
 
 ### データ
 
 | ファイル | 役割 |
 |---|---|
 | `lineups/sample_team.json` | 差し替え用の架空サンプル打線（`--lineup` で読む） |
+| `mlb_data/sample_lineup_raw.json` | `--mlb-demo` 用の実在選手サンプル生データ（出典・注意はファイル内に明記） |
 | `logs/game_*.json` | 1 ゲームごとに自動保存される試合ログ（#E） |
 
 ---
@@ -264,6 +304,10 @@ Pitch Call（要求）→ execute_pitch() → Actual Pitch（実際）→ Batter
 
 「良い配球でもホームランはあるし、悪い配球でもアウトはある」— その区別を見せます。
 
+`strategy.build_postgame_report()` は同じ `pitch_log` から、これとは別軸で「結果だけ」の数字
+（失点・対戦打者数・球数・三振・四球・被安打）と、Pitch Execution（投手の実行力）・Defense（守備）
+の要約をまとめる。Web 版の Postgame Report（CATCHER REPORT）はこの2つを両方表示している。
+
 ---
 
 ## 長打と走塁（改良A）— `fielding._hit_extent()` ＋ `baserunning.resolve()`
@@ -306,7 +350,7 @@ Pitch Call（要求）→ execute_pitch() → Actual Pitch（実際）→ Batter
 ### C. 実データ経路
 * `python main.py --lineup lineups/sample_team.json` で相手打線を差し替え（`.json` / `.csv`）。
 * `Lineup.from_records()` は `Batter.__init__` が知るキーだけ拾う（`_note` 等の余分な列は無視）。9 人ちょうどでなければエラー。
-* MLB Stats API / Savant のスラッシュ・Chase%・Pull% 等を同じキー名の dict にして渡せば実在打線になる。
+* `--mlb-demo`（CLI・Web両方）で実在選手9人のサンプル打線を読み込める。仕組みは `mlb_data_adapter.py` を参照（後述）。
 
 ### 9 分割ゾーン（コースを 3×3 に）
 * `COURSES` が 5 → **9 セル**（`in_hi`〜`out_lo`）。`constants.zone_x/zone_y/is_corner/zone_overlap`。
@@ -346,24 +390,48 @@ Pitch Call（要求）→ execute_pitch() → Actual Pitch（実際）→ Batter
 ### E. ゲームログ
 * 3 アウト後に `logs/game_YYYYmmdd_HHMMSS.json` を自動保存
   （場面・全投球・decision_quality・打球・読みの採点・最終結果）。セッション間の振り返り用。
-* （`@dataclass` 化は「振る舞いを変えない大量の書き換え」なので今回は見送り。現状のクラスも十分素朴）
 
 ### 色（`ansi.py`）
 `sys.stdout.isatty()` で自動判定。パイプ・`NO_COLOR`・`TERM=dumb` で無効、`PITCHSIM_COLOR=1` で強制有効。
 アウト＝緑 / 安打＝赤 / ボール＝黄 / ストライク＝シアン、顔文字はカテゴリ別の色、弱い野手は赤。
 
-### F. Web UI（`webapp.py`）
+### F. Web UI（`webapp.py`）— 一番のおすすめの遊び方
+
 `python webapp.py` でブラウザ版が起動します（`http://127.0.0.1:8765`、`--port` で変更可）。
+CLI 版よりこちらを「メイン作品」として見せる想定で作った、野球中継のアナリティクス画面に近い
+レイアウト。実装の要点:
 
 * **標準ライブラリの `http.server` のみ**（Flask 等を追加インストールしない）。ゲームロジックは
-  `main.resolve_one_pitch()` をそのまま再利用し、ANSI の代わりに HTML を組み立てるだけ ―
-  「表示層を差し替えれば GUI 化できる」という元々の設計方針そのもの。
-* 1 リクエスト = フォーム送信（球種・コース・意図をまとめて選んで「投球」）。ページ全体を素の HTML/CSS
-  だけで組んでおり、JavaScript は使っていない。
+  `engine.resolve_one_pitch()` をそのまま呼ぶだけで、判定ロジックは CLI 版と完全に共通。
+* **JavaScript を使わず、フォーム送信だけで組んでいる。** ドラッグ&ドロップより
+  「クリック→クリックでSwap」を選んだのと同じ理由で、見た目の凝った動きより安定性・
+  自動テストのしやすさ（`urllib` で実サーバーを叩いて検証できる）を優先した判断。
 * QTE（リズムミニゲーム）は HTTP のリクエスト/レスポンスでは体で覚える系の入力ができないため、
   `webapp.py` は起動時に `PITCHSIM_QTE=0` を強制し、常に確率モデルに任せる。
-* **CLI 版との差分**：守備の選手入れ替え（Swap）と捕手メモ（読みの記録・採点）は未対応。
-  守備シフトの変更・敬遠・継投・打球チャートはブラウザ版でも操作できる。
+
+**画面フロー**: `START GAME` → Situation Card（場面紹介、`PLAY BALL` で開始）→ メイン画面
+→ 3 アウトで **CATCHER REPORT**（Postgame Report）。
+
+**メイン画面**:
+* 常時表示のスコアボード帯（イニング/スコア/OUT/カウント/走者/球数）
+* **球場図に7人の守備位置を可視化。** ポジションをクリック→交換したいポジションをクリックで Swap。
+  適性値と総合力最下位の▼マークは見えるが「ここに置くのが正解」とは表示しない
+  ―― 打者の左右や傾向から「この打者なら穴をRFに隠そう」と考えるゲーム性は維持している
+* 打者カード（現在打者の公開情報 + NEXT + ON DECK）
+* 顔文字反応を大きく表示（`reaction.py` の reveal/mislead/ambiguous の思想はそのまま）
+* **Pitch Call → Actual Pitch** をストライクゾーン図上に Target/Actual の2マーカーで可視化。
+  「良い配球を要求したのに投手が失投した」が一目で分かる。打者の左右で列の並びを鏡像に
+  入れ替え、内角/外角の意味が常に正しくなるようにしている
+* Pitch History（直近8球、新しい順）・打球チャート（`--difficulty expert` で非表示）
+* 捕手メモ（読みを記録、試合後に採点） ―― CLI版の `m` キーと同じ機能
+
+**Postgame Report（CATCHER REPORT）**: Runs Allowed / Batters Faced / Pitches / Strikeouts /
+Walks / Hits に加え、**Decision Quality**（GOOD CALL/BAD RESULT・BAD CALL/GOOD RESULT を区別）・
+**Pitch Execution**（投手の実行力）・**Defense**（守備）を別軸で要約する
+（`strategy.build_postgame_report()`）。具体的な2〜5球の振り返りも残している。
+
+**CLI 版との機能差**: 今のところ Web 版のみの機能はなく、CLI 版のすべての機能（守備 Swap・
+捕手メモを含む）が Web 版でも使える。
 
 ## 守備確率（前バージョンから）— `fielding.resolve_batted_ball()`
 
@@ -405,12 +473,46 @@ out_probability = base_out_probability          打球種類×飛距離ごとの
 
 ---
 
-## 将来 MLB / Statcast データに置き換える
+## MLB 実データ Adapter — `mlb_data_adapter.py`（`--mlb-demo`）
+
+```
+MLB Stats API / Savant（生データ、どんな形でもよい）
+          ↓
+mlb_data_adapter.py（このファイル）
+          ↓
+Lineup._BATTER_FIELDS と同じキーの dict
+          ↓
+Lineup.from_records() → Batter オブジェクト → Game Engine
+```
+
+**外部データ形式を Game Engine に直接依存させない**、という Adapter パターンの境界線。
+API のレスポンス形式が将来変わっても、直すのは `mlb_data_adapter.py` だけでよい。
+
+* `normalize_batter_record(raw)`: `avg` / `obp` / `slg` / `bats` のような公開成績はそのまま使う。
+  `discipline` / `aggression` / `hot_course` / `weak_pitch` / `guess_bias` のようなこのゲーム
+  独自の隠しパラメータは、公開統計（`whiff_pct` / `chase_pct` / `pull_pct` / `k_pct` / `bb_pct` /
+  `gb_pct`）から合理的に推定するか、決まらない部分は**選手名から決定的に**振る（同じ選手なら
+  毎回同じ値になる。本物のホット/コールドゾーンではない点はコード内にも明記）。
+* `load_fixture_lineup()`: 同梱の `mlb_data/sample_lineup_raw.json`（実在選手9人の見本データ、
+  出典と注意はファイル内に明記）を読む。**ネット接続なしで常に動く。**
+* `fetch_live_roster_raw(team_id, season)`: MLB Stats API（公開・無料・API キー不要）から
+  `urllib`（標準ライブラリ）だけで実際に取得する経路。
+* `build_demo_lineup(prefer_live=True/False)`: `prefer_live=True` なら実際に API を叩き、
+  **失敗理由を問わず**サンプルデータへ自動フォールバックする。この開発環境自体がネットワーク
+  制限下にあり、実際に「API が 403 で失敗 → サンプルデータへフォールバック」という経路を
+  本物の失敗で動作確認できた（`tests.py` の `test_live_fetch_failure_falls_back_to_fixture_without_crashing`）。
+
+```bash
+python main.py --mlb-demo              # サンプルデータで実在選手9人の打線
+python main.py --mlb-demo --mlb-live   # 先にMLB Stats APIを試し、失敗したらサンプルへ
+python webapp.py --mlb-demo            # Web版でも同じ
+```
+
+### その他の実データ置き換えポイント
 
 | 置き換えたいもの | 場所 | 方法 |
 |---|---|---|
 | 球種別 Whiff% / GB% / 球速 / platoon split | `pitch_data.PITCH_LIBRARY` | Statcast の球種別集計で数値を上書き |
-| 打者の左右・Chase%・Whiff%・Pull%・球種別成績・スラッシュ | `lineup.SAMPLE_LINEUP` → `Lineup.from_records()` / `load_lineup_file()` | MLB Stats API / Savant の値を dict にして渡す |
 | 投手の Control / Velocity / Stuff / 球種 Quality | `pitcher.build_sample_pitcher()` | Statcast（球速・回転・命中率）をマッピング |
 | 守備能力（OAA / arm / jump） | `fielders.make_default_fielders()` | 5 能力にマッピング |
 
@@ -424,7 +526,8 @@ out_probability = base_out_probability          打球種類×飛距離ごとの
 * 走塁: 長打・併殺・犠飛・進塁打・盗塁・振り逃げ・エラー進塁まで入ったが、**本塁での憤死・中継プレー・犠打/エンドランは未実装**。
   3アウト目が成立するプレーの得点は数えない簡略化
 * 守備は「最初に触る 1 人」で判定
-* 打者交代はなし（相手打線 9 人は固定）。守備配置の変更はいつでも可（メニュー `d`）
+* 打者交代はなし（相手打線 9 人は固定）。守備配置の変更はいつでも可（CLI版 `d` / Web版は常時表示）
+* スマホ対応は最低限（レイアウト崩れの防止程度）。まず PC ブラウザでの完成度を優先した
 
 ## 数値バランスの調整場所
 
