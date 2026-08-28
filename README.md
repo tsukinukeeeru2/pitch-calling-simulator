@@ -20,6 +20,14 @@
 **プレイ中に正解は表示されません。** 打者の顔文字・反応、配球履歴、打者の左右/OPS、守備力から自分で読みます。
 振り返り（結果と判断を分けた分析）は**3 アウト後だけ**表示されます。
 
+|  |  |
+|---|---|
+| ![CLI版のプレイ画面](screenshots/cli.png) | ![Web版のプレイ画面](screenshots/web_play.png) |
+| CLI 版（`main.py`） | Web 版（`webapp.py`） |
+
+![試合後の配球のふり返り（Web版）](screenshots/web_analysis.png)
+*3 アウト後だけ表示される「結果と判断は別ものとして評価」する振り返り画面。*
+
 ```bash
 cd pitch-calling-simulator
 python main.py                                   # プレイ

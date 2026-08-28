@@ -81,7 +81,8 @@ _PAGE = """<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <title>配球判断シミュレーター</title>
 <style>
- body {{ font-family: system-ui, sans-serif; max-width: 720px; margin: 1.5em auto; background:#f4f1ea; }}
+ body {{ font-family: system-ui, "Hiragino Kaku Gothic ProN", "Yu Gothic", "IPAGothic", sans-serif;
+        max-width: 720px; margin: 1.5em auto; background:#f4f1ea; }}
  h1 {{ font-size: 1.2em; }}
  .card {{ background:#fff; border:1px solid #ccc; border-radius:8px; padding:1em; margin-bottom:1em; }}
  .row {{ display:flex; gap:.6em; flex-wrap:wrap; align-items:center; }}
