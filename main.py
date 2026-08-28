@@ -117,18 +117,23 @@ def memo_menu(state):
     print("→ メモしました（試合後に採点されます）。")
 
 
-def apply_result(state, outcome):
-    """1 球の結果をカウント・状況に反映。三振・四球・走塁はここで確定。"""
+def apply_result(state, outcome, on_event=print):
+    """1 球の結果をカウント・状況に反映。三振・四球・走塁はここで確定。
+
+    on_event : 出来事の文字列を受け取るコールバック(既定は print)。
+              CLI 以外の表示層(webapp.py 等)はメッセージのリストに積むだけの
+              関数を渡せば、このロジックをそのまま再利用できる。
+    """
     result = outcome["result"]
     if result in ("ストライク", "空振り"):
         state.strikes += 1
         if state.strikes >= 3:
-            print(">>> 三振!")
+            on_event(">>> 三振!")
             state.add_out()
     elif result == "ボール":
         state.balls += 1
         if state.balls >= 4:
-            print(">>> 四球")
+            on_event(">>> 四球")
             state.advance_on_walk()
     elif result == "ファウル":
         if state.strikes < 2:
@@ -137,15 +142,15 @@ def apply_result(state, outcome):
         play = outcome["play"]
         if result in FAIR_HITS:
             extra = f"（{play['detail']}）" if play["detail"] else ""
-            print(f">>> {play['label']}を打たれた!{extra}")
+            on_event(f">>> {play['label']}を打たれた!{extra}")
         elif result == "エラー":
             extra = f"（{play['detail']}）" if play["detail"] else ""
-            print(f">>> 味方のエラー！ 出塁を許した{extra}")
+            on_event(f">>> 味方のエラー！ 出塁を許した{extra}")
         else:
             note = play["label"] if play["label"] != "アウト" else play["detail"]
-            print(">>> 打ち取った!" + (f"（{note}）" if note else ""))
+            on_event(">>> 打ち取った!" + (f"（{note}）" if note else ""))
         if play["runs"]:
-            print(f">>> {play['runs']} 点を失った…")
+            on_event(f">>> {play['runs']} 点を失った…")
         state.spray_add(outcome["batted_ball"], result)
         state.apply_play(play)
 
@@ -190,23 +195,29 @@ def save_game_log(state):
     return path
 
 
-def play_one_pitch(state, rng):
-    # 二塁走者にサインを覗われるリスク(打席途中いつでも)
-    if state.sign_steal_chance(rng):
-        print(">>> 二塁走者がサインを覗っている気配…")
-        sign_bonus = catcher_change_signs(rng)
-        msg = state.resolve_sign_steal(sign_bonus, rng)
-        print(f">>> {msg}")
+def maybe_resolve_sign_steal(state, rng):
+    """二塁走者にサインを覗われるリスクを判定する(打席途中いつでも)。
 
-    pitch_type = choose("球種:", repertoire_options(state.pitcher))
-    course = choose_course()
-    intent = choose("配球意図:", PITCH_INTENTS)
+    表示メッセージのリストを返すだけで、呼び出し側が印字する。
+    """
+    if not state.sign_steal_chance(rng):
+        return []
+    messages = [">>> 二塁走者がサインを覗っている気配…"]
+    sign_bonus = catcher_change_signs(rng)
+    messages.append(f">>> {state.resolve_sign_steal(sign_bonus, rng)}")
+    return messages
 
+
+def resolve_one_pitch(state, pitch_type, course, intent, rng):
+    """1 球を判定して状態を更新し、(outcome, メッセージのリスト) を返す。
+
+    振り逃げ・ブロッキング・盗塁など投球後に起きる周辺イベントもここで解決する。
+    print() はしない ―― CLI(main())・Web(webapp.py) の両方から呼べるように、
+    表示は呼び出し側の責務にしてある。
+    """
+    messages = []
     outcome = judge_pitch(state, pitch_type, course, intent=intent)
     outcome["reaction"] = describe_reaction(pitch_type, outcome["actual_course"], outcome)
-
-    print()
-    print(render_play_result(outcome))
 
     log_pitch(state, outcome)
     state.history.add(pitch_type, course, outcome["result"], outcome["timing"],
@@ -224,14 +235,14 @@ def play_one_pitch(state, rng):
         low_dirt = zone_y(ac) == "lo" and not outcome["in_zone"]
         if low_dirt or rng.random() < 0.30:
             why = "一塁が空いている" if not state.runners[0] else "2アウト"
-            print(f">>> ワンバウンド三振！ 振り逃げのチャンス（{why}）")
+            messages.append(f">>> ワンバウンド三振！ 振り逃げのチャンス（{why}）")
             hard = is_corner(ac)
             block_bonus = catcher_block(zone_x(ac), wild=not low_dirt, rng=rng)
-            safe, msg = state.resolve_dropped_third(
+            _, msg = state.resolve_dropped_third(
                 block_bonus, lambda: catcher_throw(rng, base="一塁", title="拾った！ 一塁へ送れ"),
                 rng, hard=hard)
-            print(f">>> {msg}")
-            return outcome
+            messages.append(f">>> {msg}")
+            return outcome, messages
 
     # ワンバウンド / 暴投 + 走者あり → ブロッキング(方向ボタン + 1・2・3 のリズム)
     if any(state.runners) and outcome["missed"] and result in ("ボール", "空振り"):
@@ -241,20 +252,37 @@ def play_one_pitch(state, rng):
             block_bonus = catcher_block(zone_x(ac), wild=not low_dirt, rng=rng)
             msg = state.resolve_block(block_bonus, rng, hard=hard)
             if msg:
-                print(f">>> {msg}")
+                messages.append(f">>> {msg}")
 
     # 打球が飛ばなかった球 → 走者が盗塁を試みることがある(3 段階 QTE)
     if result in ("ボール", "ストライク", "空振り") and state.steal_chance(rng):
-        print(">>> 走者がスタート！")
+        messages.append(">>> 走者がスタート！")
         throw_bonus = catcher_throw(rng)
         ev = state.resolve_steal(fam, rng, throw_bonus=throw_bonus)
         if ev:
-            print(f">>> {ev}")
+            messages.append(f">>> {ev}")
 
     if state.is_over():
-        return outcome
+        return outcome, messages
 
-    apply_result(state, outcome)
+    apply_result(state, outcome, on_event=messages.append)
+    return outcome, messages
+
+
+def play_one_pitch(state, rng):
+    for msg in maybe_resolve_sign_steal(state, rng):
+        print(msg)
+
+    pitch_type = choose("球種:", repertoire_options(state.pitcher))
+    course = choose_course()
+    intent = choose("配球意図:", PITCH_INTENTS)
+
+    outcome, messages = resolve_one_pitch(state, pitch_type, course, intent, rng)
+
+    print()
+    print(render_play_result(outcome))
+    for msg in messages:
+        print(msg)
     return outcome
 
 
