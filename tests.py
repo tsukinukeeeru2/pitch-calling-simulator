@@ -428,6 +428,41 @@ class ReactionTests(unittest.TestCase):
         self.assertIn(r["face"], kaomoji_block)
 
 
+# ---------- 打席をまたぐ配球バレ(打者の記憶) ----------
+class BatterMemoryTests(unittest.TestCase):
+    def test_batter_memory_is_none_until_recorded(self):
+        st = _state(5)
+        self.assertIsNone(st.batter_memory(st.batter))
+
+    def test_next_batter_remembers_pitch_tendency_until_batting_around(self):
+        st = _state(5)
+        batter = st.batter
+        for _ in range(6):
+            st.history.add(pitch_type="four_seam", course="mid_mid", result="ストライク",
+                           timing="on_time", swung=False, family="fastball", in_zone=True)
+        for _ in range(9):                    # 打者一巡させて同じ打者に戻す
+            st.next_batter()
+        self.assertIs(st.batter, batter)
+        mem = st.batter_memory(batter)
+        self.assertEqual(mem, {"fastball": 6, "offspeed": 0})
+
+    def test_predict_guess_leans_toward_remembered_tendency(self):
+        st = _state(6)
+        batter = st.batter
+
+        def signed_lean(guess):
+            return guess["class_strength"] if guess["class"] == "fastball" else -guess["class_strength"]
+
+        without = signed_lean(batter.predict_guess(st.history, st, st.pitcher))
+        st.batter_pitch_memory[id(batter)] = {"fastball": 20, "offspeed": 0}
+        leans_fastball = signed_lean(batter.predict_guess(st.history, st, st.pitcher))
+        self.assertGreater(leans_fastball, without)
+
+        st.batter_pitch_memory[id(batter)] = {"fastball": 0, "offspeed": 20}
+        leans_offspeed = signed_lean(batter.predict_guess(st.history, st, st.pitcher))
+        self.assertLess(leans_offspeed, without)
+
+
 # ---------- 配球セットアップ / 判断の質 ----------
 class StrategyTests(unittest.TestCase):
     def _seq(self, records, call):

@@ -100,7 +100,7 @@ class Batter:
              "location": "inside"|"outside"|"middle"|"any", "loc_strength": 0..1}
 
         材料: カウント / 打者の性格(guess_bias, discipline) / 配球履歴 /
-              同じ球の連続 / 投手の球種割合 / 前の球。
+              同じ球の連続 / 投手の球種割合 / 前の球 / 打席をまたぐ記憶(打者一巡)。
         """
         lean_fastball = self.guess_bias   # 1.0 に近いほど速球待ち
 
@@ -114,6 +114,14 @@ class Batter:
             reps = pitcher.repertoire
             fb = sum(1 for k in reps if guess_class_of(k) == "fastball")
             lean_fastball = 0.6 * lean_fastball + 0.4 * (fb / max(1, len(reps)))
+
+        # 1.5 打席をまたぐ記憶(打者一巡): 前の打席で見せられた傾向を薄く覚えている
+        memory = getattr(state, "batter_memory", None)
+        mem = memory(self) if memory else None
+        if mem:
+            mem_total = mem["fastball"] + mem["offspeed"]
+            if mem_total > 0:
+                lean_fastball = 0.75 * lean_fastball + 0.25 * (mem["fastball"] / mem_total)
 
         # 2. カウント
         if state.balls > state.strikes:

@@ -49,6 +49,7 @@ class MatchState:
         self.pitching_changes = 0
         self.events = []                 # 盗塁など、打席途中の出来事のログ
         self.sign_leak = 0.0             # サインを見破られた次の1球だけ、打者の狙いを強める(#B)
+        self.batter_pitch_memory = {}    # id(batter) -> {"fastball","offspeed"}。打席をまたぐ記憶
 
     # ---- judge.py が使う ----
     @property
@@ -213,9 +214,27 @@ class MatchState:
         self.strikes = 0
 
     def next_batter(self):
+        self._remember_batter_history()
         self.reset_count()
         self.history.clear()
         self.lineup.advance()
+
+    def _remember_batter_history(self):
+        """次の打者へ移る前に、今の打者に見せた球種の傾向を打席をまたいで覚えておく。
+
+        打者一巡などで同じ打者と再び対戦したとき、predict_guess() がこれを見て
+        『前の打席で速球を多く見せられた』のような記憶を薄く反映する。
+        """
+        counts = self.history.recent_class_counts(len(self.history.records))
+        if counts["fastball"] + counts["offspeed"] == 0:
+            return
+        mem = self.batter_pitch_memory.setdefault(id(self.batter), {"fastball": 0, "offspeed": 0})
+        mem["fastball"] += counts["fastball"]
+        mem["offspeed"] += counts["offspeed"]
+
+    def batter_memory(self, batter):
+        """この半イニングで、この打者の過去の打席に見せた球種の内訳(なければ None)。"""
+        return self.batter_pitch_memory.get(id(batter))
 
     def add_out(self):
         self.outs += 1
