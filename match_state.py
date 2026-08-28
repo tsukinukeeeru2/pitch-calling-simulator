@@ -50,6 +50,7 @@ class MatchState:
         self.events = []                 # 盗塁など、打席途中の出来事のログ
         self.sign_leak = 0.0             # サインを見破られた次の1球だけ、打者の狙いを強める(#B)
         self.batter_pitch_memory = {}    # id(batter) -> {"fastball","offspeed"}。打席をまたぐ記憶
+        self.batters_faced = 1           # Postgame Report用。最初の打者も1人と数える
 
     # ---- judge.py が使う ----
     @property
@@ -215,6 +216,7 @@ class MatchState:
 
     def next_batter(self):
         self._remember_batter_history()
+        self.batters_faced += 1
         self.reset_count()
         self.history.clear()
         self.lineup.advance()

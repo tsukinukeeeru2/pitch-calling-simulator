@@ -39,18 +39,26 @@ def apply_result(state, outcome, on_event=print):
     on_event : 出来事の文字列を受け取るコールバック(既定は print)。
               CLI 以外の表示層(webapp.py 等)はメッセージのリストに積むだけの
               関数を渡せば、このロジックをそのまま再利用できる。
+
+    打席が終わったら、直前に log_pitch() が積んだ pitch_log の最後の 1 件に
+    at_bat_end("strikeout"/"walk"/"hit"/"error"/"out")を付け足す。Postgame
+    Report(#Batters Faced / Strikeouts / Walks / Hits)が使うだけの集計用タグで、
+    判定そのものには一切影響しない。
     """
     result = outcome["result"]
+    pa_end = None
     if result in ("ストライク", "空振り"):
         state.strikes += 1
         if state.strikes >= 3:
             on_event(">>> 三振!")
             state.add_out()
+            pa_end = "strikeout"
     elif result == "ボール":
         state.balls += 1
         if state.balls >= 4:
             on_event(">>> 四球")
             state.advance_on_walk()
+            pa_end = "walk"
     elif result == "ファウル":
         if state.strikes < 2:
             state.strikes += 1
@@ -69,6 +77,10 @@ def apply_result(state, outcome, on_event=print):
             on_event(f">>> {play['runs']} 点を失った…")
         state.spray_add(outcome["batted_ball"], result)
         state.apply_play(play)
+        pa_end = "hit" if result in FAIR_HITS else ("error" if result == "エラー" else "out")
+
+    if pa_end and state.pitch_log:
+        state.pitch_log[-1]["at_bat_end"] = pa_end
 
 
 def log_pitch(state, outcome):
@@ -89,6 +101,7 @@ def log_pitch(state, outcome):
         "fooled_guess": an["fooled_guess"],
         "alignment_helped": an["alignment_helped"],
         "missed": outcome["missed"],
+        "quality": round(outcome["quality"], 2),
         "outcome_flags": {"swung": outcome["swung"], "in_zone": outcome["in_zone"]},
     })
 
@@ -136,8 +149,8 @@ def resolve_one_pitch(state, pitch_type, course, intent, rng):
     表示は呼び出し側の責務にしてある。
     """
     messages = []
-    outcome = judge_pitch(state, pitch_type, course, intent=intent)
-    outcome["reaction"] = describe_reaction(pitch_type, outcome["actual_course"], outcome)
+    outcome = judge_pitch(state, pitch_type, course, rng, intent=intent)
+    outcome["reaction"] = describe_reaction(pitch_type, outcome["actual_course"], outcome, rng)
 
     log_pitch(state, outcome)
     state.history.add(pitch_type, course, outcome["result"], outcome["timing"],
@@ -162,6 +175,9 @@ def resolve_one_pitch(state, pitch_type, course, intent, rng):
                 block_bonus, lambda: catcher_throw(rng, base="一塁", title="拾った！ 一塁へ送れ"),
                 rng, hard=hard)
             messages.append(f">>> {msg}")
+            # 振り逃げは生きても刺されても、打者の成績上は「三振」扱い(実際の野球のルール)
+            if state.pitch_log:
+                state.pitch_log[-1]["at_bat_end"] = "strikeout"
             return outcome, messages
 
     # ワンバウンド / 暴投 + 走者あり → ブロッキング(方向ボタン + 1・2・3 のリズム)

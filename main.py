@@ -138,18 +138,20 @@ def _parse_args():
     p.add_argument("--difficulty", choices=_DIFFICULTIES,
                    default=os.environ.get("PITCHSIM_DIFFICULTY", "normal"),
                    help="beginner=ヒント表示を増やす / expert=打球チャートを隠す（既定: normal）")
+    p.add_argument("--seed", type=int, default=None,
+                   help="乱数シード。指定すると場面生成・投球判定が再現可能になる")
     return p.parse_args()
 
 
 def main():
     args = _parse_args()
-    rng = random
+    rng = random.Random(args.seed) if args.seed is not None else random
     batters = None
     if args.lineup:
         batters = load_lineup_file(args.lineup).batters
         print(f"打線ファイルを読み込みました: {args.lineup}")
 
-    state = generate_random_situation(lineup_batters=batters)
+    state = generate_random_situation(rng=rng, lineup_batters=batters)
     print(render_intro(hints=(args.difficulty == "beginner")))
     print()
     print(render_situation_card(state))

@@ -380,3 +380,41 @@ def build_analysis(pitch_log):
         "avg_decision_quality": round(avg_dq, 3),
         "decision_quality_label": dq_label,
     }
+
+
+def build_postgame_report(state):
+    """3 アウト後の Catcher Report 用の集計(#Postgame Report)。
+
+    build_analysis() が持つ「判断の質」の分析に、結果だけでひと目で分かる
+    数字(失点/対戦打者数/球数/三振/四球/被安打)と、判断の質(decision_quality)
+    とは別軸の Pitch Execution(投手の実行力)・Defense(守備)の要約を足す。
+    判定ロジックには一切触れない、集計だけの純粋関数。
+    """
+    log = state.pitch_log
+    strikeouts = sum(1 for p in log if p.get("at_bat_end") == "strikeout")
+    walks = sum(1 for p in log if p.get("at_bat_end") == "walk") + state.events.count("敬遠")
+    hits = sum(1 for p in log if p.get("at_bat_end") == "hit")
+    errors = sum(1 for p in log if p.get("at_bat_end") == "error")
+
+    missed_pitches = sum(1 for p in log if p["missed"])
+    avg_quality = sum(p["quality"] for p in log) / len(log) if log else 0.0
+
+    return {
+        "runs_allowed": state.runs_this_inning,
+        "batters_faced": state.batters_faced,
+        "pitches": len(log),
+        "strikeouts": strikeouts,
+        "walks": walks,
+        "hits": hits,
+        "errors": errors,
+        "pitch_execution": {
+            "missed_pitches": missed_pitches,
+            "missed_rate": round(missed_pitches / len(log), 3) if log else 0.0,
+            "avg_quality": round(avg_quality, 3),
+        },
+        "defense": {
+            "alignment_helped": sum(1 for p in log if p["alignment_helped"]),
+            "errors": errors,
+            "final_ede": round(state.defense.expected_defensive_efficiency(), 1),
+        },
+    }
