@@ -1,8 +1,12 @@
 """ブラウザで遊べる軽量 Web UI(標準ライブラリのみ、追加インストール不要)。
 
-    python webapp.py                 # http://127.0.0.1:8765 で起動
+    python webapp.py                 # http://127.0.0.1:8765 で起動(自分の PC からだけ)
     python webapp.py --port 9000
     python webapp.py --lineup lineups/sample_team.json
+    python webapp.py --host 0.0.0.0  # 同じ Wi-Fi の他端末(スマホ等)からもアクセス可能に
+
+--host 0.0.0.0 は同じネットワーク上の誰でもアクセスできてしまうので、
+信頼できるネットワーク(自宅 Wi-Fi 等)でのみ使うこと。
 
 main.py と同じく「進行役」に徹する。ゲームロジック(judge.py 以下)には
 一切触れない ―― main.resolve_one_pitch() をそのまま呼び出し、結果を
@@ -355,6 +359,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def _parse_args():
     p = argparse.ArgumentParser(description="配球判断シミュレーター（Web版）")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="0.0.0.0 にすると同じネットワーク上の他端末(スマホ等)からも"
+                       "アクセス可能になる。信頼できるネットワークでのみ使うこと")
     p.add_argument("--lineup", help=".json / .csv の相手打線ファイル")
     return p.parse_args()
 
@@ -367,8 +374,16 @@ def main():
     global SESSION
     SESSION = GameSession(lineup_batters=batters)
 
-    with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
-        print(f"http://127.0.0.1:{args.port} で起動しました（Ctrl+C で終了）")
+    with socketserver.TCPServer((args.host, args.port), Handler) as httpd:
+        print(f"http://{args.host}:{args.port} で起動しました（Ctrl+C で終了）")
+        if args.host == "0.0.0.0":
+            import socket
+            try:
+                lan_ip = socket.gethostbyname(socket.gethostname())
+                print(f"同じ Wi-Fi のスマホからは http://{lan_ip}:{args.port} でアクセスできます"
+                     "（うまく繋がらない場合は ipconfig / ifconfig で調べた IP を使ってください）")
+            except OSError:
+                pass
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
