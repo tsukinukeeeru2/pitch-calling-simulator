@@ -13,6 +13,7 @@ judge.py は隠し情報で確率を動かすが、reaction.py と ui.py は公�
 """
 
 import random
+from dataclasses import dataclass, field
 
 from pitch_data import all_pitch_keys, guess_class_of
 
@@ -27,50 +28,60 @@ def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 
+@dataclass
 class Batter:
-    def __init__(self, name="打者", bats="R", coarse_type="average",
-                 avg=0.255, obp=0.320, slg=0.410,
-                 power=0.5, contact=0.5, discipline=0.5, chase_rate=0.30,
-                 whiff_rate=0.24, aggression=0.5,
-                 pull=0.40, gb_tendency=0.45,
-                 vs_fastball=0.5, vs_breaking=0.5, vs_offspeed=0.5,
-                 hot_course="middle", weak_course="low", weak_pitch="slider",
-                 guess_bias=0.55, two_strike_ability=0.5, pressure_tolerance=0.5,
-                 speed=50):
-        # --- 公開 ---
-        self.name = name
-        self.bats = bats
-        self.type = coarse_type
-        self.avg = avg
-        self.obp = obp
-        self.slg = slg
-        self.ops = round(obp + slg, 3)
-        # --- 隠し ---
-        self.power = power
-        self.contact = contact
-        self.discipline = discipline
-        self.chase_rate = chase_rate
-        self.whiff_rate = whiff_rate
-        self.aggression = aggression
-        self.pull_tendency = pull           # batted_ball.py が使う名前に合わせる
-        self.gb_tendency = gb_tendency
-        self.vs_fastball = vs_fastball
-        self.vs_breaking = vs_breaking
-        self.vs_offspeed = vs_offspeed
-        self.hot_course = hot_course
-        self.weak_course = weak_course
-        self.weak_pitch = weak_pitch
-        self.guess_bias = guess_bias
-        self.two_strike_ability = two_strike_ability
-        self.pressure_tolerance = pressure_tolerance
-        self.speed = speed
+    """打者 1 人。データを保持するのが主目的なので @dataclass。
+
+    フィールド名はコンストラクタ引数(lineup.py・CSV/JSON・テストが使う名前)と
+    完全に一致させている。`ops` だけは obp+slg から自動計算するので
+    `field(init=False)` にして __post_init__ で埋める。
+
+    公開(スコアボードに出してよい): name / bats(左右) / OPS・AVG・OBP・SLG / 打者タイプ
+    隠し(プレイヤーには見せない):
+        power / contact / discipline / chase_rate / whiff_rate / aggression
+        pull・gb_tendency(打球方向の傾向)
+        vs_fastball / vs_breaking / vs_offspeed(球種別の強さ)
+        hot_course(得意) / weak_course(苦手) / weak_pitch
+        guess_bias(狙い球のクセ) / two_strike_ability / pressure_tolerance / speed
+
+    judge.py は隠し情報で確率を動かすが、reaction.py と ui.py は公開情報しか触らない。
+    """
+
+    name: str = "打者"
+    bats: str = "R"
+    coarse_type: str = "average"
+    avg: float = 0.255
+    obp: float = 0.320
+    slg: float = 0.410
+    power: float = 0.5
+    contact: float = 0.5
+    discipline: float = 0.5
+    chase_rate: float = 0.30
+    whiff_rate: float = 0.24
+    aggression: float = 0.5
+    pull: float = 0.40             # 引っ張り傾向。打球方向は batted_ball.py が決める
+    gb_tendency: float = 0.45
+    vs_fastball: float = 0.5
+    vs_breaking: float = 0.5
+    vs_offspeed: float = 0.5
+    hot_course: str = "middle"
+    weak_course: str = "low"
+    weak_pitch: str = "slider"
+    guess_bias: float = 0.55
+    two_strike_ability: float = 0.5
+    pressure_tolerance: float = 0.5
+    speed: int = 50
+    ops: float = field(init=False)
+
+    def __post_init__(self):
+        self.ops = round(self.obp + self.slg, 3)
 
     # ---------- 公開情報の見せ方 ----------
     def public_hand_name(self):
         return HANDEDNESS[self.bats]
 
     def type_label(self):
-        return COARSE_TYPES.get(self.type, self.type)
+        return COARSE_TYPES.get(self.coarse_type, self.coarse_type)
 
     def public_line(self):
         return f"{self.bats} / OPS {self.ops:.3f}"
@@ -84,7 +95,7 @@ class Batter:
             "free_swinger": "早いカウントから振ってくる",
             "average": "目立った傾向は薄い",
             "weak": "強い打球は少ない",
-        }.get(self.type, "傾向不明")
+        }.get(self.coarse_type, "傾向不明")
 
     def family_strength(self, family):
         return {"fastball": self.vs_fastball,

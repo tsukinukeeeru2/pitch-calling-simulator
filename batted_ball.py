@@ -12,6 +12,7 @@
 """
 
 import random
+from dataclasses import dataclass
 
 from constants import zone_x, zone_y
 
@@ -24,13 +25,15 @@ _HARDNESS_JP = {"soft": "弱い", "medium": "そこそこの", "hard": "強い"}
 _TYPE_JP = {"ground": "ゴロ", "line": "ライナー", "fly": "フライ"}
 
 
+@dataclass
 class BattedBall:
-    def __init__(self, direction, ball_type, hardness, hardness_score, distance):
-        self.direction = direction
-        self.ball_type = ball_type
-        self.hardness = hardness
-        self.hardness_score = hardness_score   # 0-1 の連続値(丸める前の強さ)
-        self.distance = distance
+    """フェア打球 1 本のデータ。物理シミュレーションではなく確率モデルの出力。"""
+
+    direction: str          # "pull" / "center" / "oppo"(打者から見た方向)
+    ball_type: str          # "ground" / "line" / "fly"
+    hardness: str           # "soft" / "medium" / "hard"
+    hardness_score: float   # 0-1 の連続値(丸める前の強さ)
+    distance: str           # "infield" / "shallow" / "deep"
 
     def describe(self):
         return f"{_DIRECTION_JP[self.direction]}への{_HARDNESS_JP[self.hardness]}{_TYPE_JP[self.ball_type]}"
@@ -61,8 +64,8 @@ def generate_batted_ball(batter, pitch, course, timing, contact_bias=0.0, rng=No
     rng = rng or random
 
     # --- 1. 方向 (pull / center / oppo) ---
-    p_pull = 0.30 + 0.40 * batter.pull_tendency     # 引っ張り屋ほど pull が増える
-    p_oppo = 0.32 - 0.20 * batter.pull_tendency
+    p_pull = 0.30 + 0.40 * batter.pull     # 引っ張り屋ほど pull が増える
+    p_oppo = 0.32 - 0.20 * batter.pull
     p_center = max(0.05, 1.0 - p_pull - p_oppo)
     if timing == "early":            # 前でさばく → 引っ張り
         p_pull += 0.16
@@ -102,9 +105,9 @@ def generate_batted_ball(batter, pitch, course, timing, contact_bias=0.0, rng=No
         score += 0.18
     else:
         score -= 0.12
-    if batter.type == "power":
+    if batter.coarse_type == "power":
         score += 0.10
-    elif batter.type == "rookie":
+    elif batter.coarse_type == "rookie":
         score -= 0.05
     score += contact_bias
     score += rng.uniform(-0.08, 0.08)

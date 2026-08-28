@@ -15,6 +15,7 @@
 """
 
 import random
+from dataclasses import dataclass, field
 
 from constants import CENTER_COURSE, COURSE_NEIGHBORS, is_corner
 from pitch_data import DEFAULT_PITCHER
@@ -26,21 +27,29 @@ from pitch_data import DEFAULT_PITCHER
 #   miss_kind     : "leak"(甘く入った) / "spray"(散らばった) / None
 
 
+@dataclass
 class Pitcher:
-    def __init__(self, name="投手", throws="R", control=55, command=55,
-                 velocity=55, stuff=55, repertoire=None, pitch_quality=None):
-        self.name = name
-        self.throws = throws
-        self.control = control
-        self.command = command
-        self.velocity = velocity
-        self.stuff = stuff
-        self.repertoire = list(repertoire or DEFAULT_PITCHER["repertoire"])
+    """投手 1 人。能力値の保持が主目的だが、execute_pitch()/fatigue() という
+    振る舞いも持つので普通の @dataclass(frozen にはしない、pitches_thrown が
+    投球のたびに増える可変フィールドのため)。
+    """
+
+    name: str = "投手"
+    throws: str = "R"
+    control: float = 55
+    command: float = 55
+    velocity: float = 55
+    stuff: float = 55
+    repertoire: list = None
+    pitch_quality: dict = None
+    pitches_thrown: int = field(default=0, init=False)   # 球数(#D 疲労)
+
+    def __post_init__(self):
+        self.repertoire = list(self.repertoire or DEFAULT_PITCHER["repertoire"])
         # 球種ごとの出来。指定がなければ stuff を土台に少しばらす。
-        self.pitch_quality = dict(pitch_quality or {})
+        self.pitch_quality = dict(self.pitch_quality or {})
         for key in self.repertoire:
-            self.pitch_quality.setdefault(key, stuff)
-        self.pitches_thrown = 0      # 球数(#D 疲労)
+            self.pitch_quality.setdefault(key, self.stuff)
 
     # ---- 疲労(#D) ----
     def fatigue(self):

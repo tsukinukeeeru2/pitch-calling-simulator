@@ -369,7 +369,7 @@ class SituationTests(unittest.TestCase):
         lu = build_sample_lineup(random.Random(0))
         self.assertEqual(len(lu), 9)
         # 打者タイプがちゃんとばらけている
-        self.assertGreaterEqual(len({b.type for b in lu}), 4)
+        self.assertGreaterEqual(len({b.coarse_type for b in lu}), 4)
         # 出塁型と長打型で discipline がはっきり違う
         self.assertGreater(lu[7].discipline, lu[4].discipline)
 
@@ -596,7 +596,7 @@ class BCDETests(unittest.TestCase):
         lu = load_lineup_file(path)
         self.assertEqual(len(lu.batters), 9)
         self.assertTrue(all(b.bats in ("R", "L") for b in lu.batters))
-        self.assertGreaterEqual(len({b.type for b in lu.batters}), 4)
+        self.assertGreaterEqual(len({b.coarse_type for b in lu.batters}), 4)
 
     def test_intro_shows_hints_only_when_requested(self):
         self.assertNotIn("初心者向けヒント", render_intro())

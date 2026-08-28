@@ -225,9 +225,9 @@ def _intent_count_fit(intent, balls, strikes):
 
 def _defense_synergy(defense, batter):
     align = defense.alignment
-    if align == "pull" and batter.pull_tendency > 0.6:
+    if align == "pull" and batter.pull > 0.6:
         return 0.05
-    if align == "oppo" and batter.pull_tendency < 0.4:
+    if align == "oppo" and batter.pull < 0.4:
         return 0.05
     if align in ("pull", "oppo"):
         return -0.03

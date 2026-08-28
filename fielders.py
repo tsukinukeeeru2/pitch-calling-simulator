@@ -13,6 +13,7 @@
 """
 
 import random
+from dataclasses import dataclass
 
 INFIELD_POSITIONS = ["3B", "SS", "2B", "1B"]
 OUTFIELD_POSITIONS = ["LF", "CF", "RF"]
@@ -21,14 +22,16 @@ POSITIONS = INFIELD_POSITIONS + OUTFIELD_POSITIONS
 ATTRS = ["range", "hands", "arm", "reaction", "speed"]
 
 
+@dataclass
 class Fielder:
-    def __init__(self, name, rng, hands, arm, reaction, speed):
-        self.name = name
-        self.range = rng          # 守備範囲(一歩目からの到達力)
-        self.hands = hands        # 捕球の確実さ(glove)
-        self.arm = arm            # 送球の強さ・正確さ
-        self.reaction = reaction  # 打球への反応の速さ
-        self.speed = speed        # 足の速さ
+    """野手 1 人。5 能力を保持するだけのデータクラス。"""
+
+    name: str
+    range: float      # 守備範囲(一歩目からの到達力)
+    hands: float      # 捕球の確実さ(glove)
+    arm: float        # 送球の強さ・正確さ
+    reaction: float   # 打球への反応の速さ
+    speed: float      # 足の速さ
 
     def overall(self):
         """5 能力の単純平均。『総合的にうまいか』のざっくり指標。"""
