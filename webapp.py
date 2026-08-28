@@ -841,13 +841,23 @@ def _parse_args():
                    help="乱数シード。指定すると場面生成・投球判定が再現可能になる")
     p.add_argument("--difficulty", choices=("beginner", "normal", "expert"),
                    default=os.environ.get("PITCHSIM_DIFFICULTY", "normal"))
+    p.add_argument("--mlb-demo", action="store_true",
+                   help="実在選手のサンプル打線を使う(mlb_data_adapter 経由)")
+    p.add_argument("--mlb-live", action="store_true",
+                   help="--mlb-demo と併用。MLB Stats API から実際に取得を試みる"
+                       "(失敗したら自動でサンプルデータにフォールバック)")
     return p.parse_args()
 
 
 def main():
     args = _parse_args()
     batters = None
-    if args.lineup:
+    if args.mlb_demo:
+        from mlb_data_adapter import build_demo_lineup
+        lineup, source = build_demo_lineup(prefer_live=args.mlb_live)
+        batters = lineup.batters
+        print(f"MLBサンプル打線を読み込みました（{'MLB Stats API' if source == 'live' else 'サンプルデータ'}）")
+    elif args.lineup:
         batters = load_lineup_file(args.lineup).batters
     global SESSION
     SESSION = GameSession(lineup_batters=batters, seed=args.seed, difficulty=args.difficulty)

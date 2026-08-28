@@ -42,6 +42,7 @@ from pitch_data import (
 from pitcher import Pitcher, build_sample_pitcher
 from qte import catcher_block, catcher_change_signs, catcher_throw, qte_enabled
 from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
+import mlb_data_adapter
 import replay
 import stats
 from strategy import PITCH_INTENTS, build_analysis, build_postgame_report, evaluate_sequencing, grade_reads
@@ -708,6 +709,75 @@ class BCDETests(unittest.TestCase):
                      render_field(st.defense, st.batter), render_analysis(st)):
             self.assertIsInstance(text, str)
             self.assertTrue(text)
+
+
+# ---------- MLB実データ Adapter ----------
+class MLBDataAdapterTests(unittest.TestCase):
+    def test_normalize_maps_public_stats_directly(self):
+        raw = {"name": "Test Player", "bats": "L", "avg": 0.300, "obp": 0.400, "slg": 0.550,
+              "whiff_pct": 20, "chase_pct": 25, "pull_pct": 40, "k_pct": 18, "bb_pct": 12,
+              "gb_pct": 40, "speed_pct": 60}
+        rec = mlb_data_adapter.normalize_batter_record(raw)
+        self.assertEqual(rec["name"], "Test Player")
+        self.assertEqual(rec["bats"], "L")
+        self.assertEqual(rec["avg"], 0.300)
+        self.assertEqual(rec["obp"], 0.400)
+        self.assertEqual(rec["slg"], 0.550)
+        self.assertEqual(rec["speed"], 60)
+        # Batter が受け取れるキーがすべて揃っている
+        b = Batter(**rec)
+        self.assertEqual(b.name, "Test Player")
+
+    def test_normalize_is_deterministic_for_the_same_player(self):
+        raw = {"name": "Same Player", "bats": "R", "avg": 0.270, "obp": 0.330, "slg": 0.430}
+        a = mlb_data_adapter.normalize_batter_record(raw)
+        b = mlb_data_adapter.normalize_batter_record(raw)
+        self.assertEqual(a, b)   # 同じ選手なら hot_course 等の「山勘」も毎回同じ
+
+    def test_normalize_fills_missing_advanced_stats_with_defaults(self):
+        raw = {"name": "Minimal", "bats": "R", "avg": 0.260, "obp": 0.320, "slg": 0.400}
+        rec = mlb_data_adapter.normalize_batter_record(raw)
+        for key in ("chase_rate", "whiff_rate", "pull", "gb_tendency", "power", "contact"):
+            self.assertTrue(0.0 <= rec[key] <= 1.0)
+
+    def test_load_fixture_lineup_gives_nine_real_named_batters(self):
+        lu = mlb_data_adapter.load_fixture_lineup()
+        self.assertEqual(len(lu.batters), 9)
+        names = {b.name for b in lu.batters}
+        self.assertEqual(len(names), 9)             # 全員別人
+        self.assertTrue(all(b.bats in ("R", "L") for b in lu.batters))
+        self.assertTrue(all(0.150 <= b.avg <= 0.400 for b in lu.batters))
+
+    def test_fixture_lineup_plays_through_the_engine(self):
+        """アダプタが作った Batter が Game Engine を1試合分きちんと通ること。"""
+        lu = mlb_data_adapter.load_fixture_lineup()
+        rng = random.Random(21)
+        state = generate_random_situation(rng, lineup_batters=lu.batters)
+        guard = 0
+        while not state.is_over():
+            guard += 1
+            self.assertLess(guard, 400)
+            pt = rng.choice(list(repertoire_options(state.pitcher)))
+            co = rng.choice(list(COURSES))
+            it = rng.choice(list(PITCH_INTENTS))
+            resolve_one_pitch(state, pt, co, it, rng)
+        self.assertEqual(state.outs, 3)
+        build_analysis(state.pitch_log)
+        from strategy import build_postgame_report
+        build_postgame_report(state)
+
+    def test_live_fetch_failure_falls_back_to_fixture_without_crashing(self):
+        """このテスト環境はそもそもネットワークが使えないので、
+        『API失敗時にゲーム本体が壊れない』を実際の失敗パスで検証できる。
+        """
+        lineup, source = mlb_data_adapter.build_demo_lineup(prefer_live=True,
+                                                             team_id=147, season=2024)
+        self.assertEqual(source, "fixture")
+        self.assertEqual(len(lineup.batters), 9)
+
+    def test_fetch_live_roster_raw_raises_a_clear_error_when_unreachable(self):
+        with self.assertRaises(RuntimeError):
+            mlb_data_adapter.fetch_live_roster_raw(147, 2024)
 
 
 # ---------- 追加ゲーム性(敬遠 / 継投 / 盗塁) ----------
