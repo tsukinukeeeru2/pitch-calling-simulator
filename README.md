@@ -24,7 +24,8 @@
 cd pitch-calling-simulator
 python main.py                                   # プレイ
 python main.py --lineup lineups/sample_team.json # 相手打線を差し替えて（#C）
-python tests.py                                  # 自動テスト 50 件（最後に 1000 ゲームのストレステスト）
+python tests.py                                  # 自動テスト（最後に 1000 ゲームのストレステスト）
+python stats.py                                  # logs/ を集計した成績ダッシュボード
 ```
 
 プレイ中の操作: `Enter`=投球 / `d`=守備変更 / `m`=打者の読みをメモ / `w`=敬遠（一塁が空いているとき）/ `p`=継投（1回だけ）/ `q`=終了。
@@ -64,6 +65,12 @@ python tests.py                                  # 自動テスト 50 件（最�
 | `ballpark_view.py` | 守備位置を「球場を上から見た図」の色付き文字列に |
 | `ui.py` | スコアボード・ベース図・打者カード・**打球チャート**・1 球結果・試合後分析 |
 | `main.py` | 進行役。入力・`--lineup` 読込・ゲームログ保存・上を呼んで表示 |
+
+### ツール
+
+| ファイル | 役割 |
+|---|---|
+| `stats.py` | `logs/game_*.json` を横断集計する成績ダッシュボード（コース別/意図別の被弾率・decision_quality） |
 
 ### データ
 

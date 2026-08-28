@@ -36,6 +36,7 @@ from pitch_data import (
 from pitcher import Pitcher, build_sample_pitcher
 from qte import catcher_block, catcher_change_signs, catcher_throw, qte_enabled
 from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
+import stats
 from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
 from ui import render_analysis, render_dashboard, render_play_result, render_spray
 
@@ -839,6 +840,48 @@ class GameplayExtrasTests(unittest.TestCase):
                 self.assertEqual(st.runners, [True, True, False])   # 二塁走者は進塁を強制されない
                 return
         self.fail("送球で生きるケースが一度も発生しなかった")
+
+
+# ---------- 成績ダッシュボード(stats.py) ----------
+class StatsTests(unittest.TestCase):
+    def test_parse_call_label(self):
+        pitch, course, intent = stats._parse_call("sinker/in_hi(ストライク先行)")
+        self.assertEqual((pitch, course, intent), ("sinker", "in_hi", "ストライク先行"))
+        self.assertEqual(stats._parse_call("おかしな文字列"), (None, None, None))
+
+    def _game(self, entries, runs=0):
+        return {
+            "final": {"runs_this_inning": runs},
+            "pitches": [
+                {"call_label": f"four_seam/out_lo({intent})", "result": result,
+                 "decision_quality": dq}
+                for result, dq, intent in entries
+            ],
+        }
+
+    def test_bucket_tracks_bad_rate_and_avg_dq(self):
+        b = stats._Bucket()
+        b.add("単打", 0.5)
+        b.add("アウト", -0.2)
+        self.assertEqual(b.n, 2)
+        self.assertAlmostEqual(b.bad_rate(), 0.5)
+        self.assertAlmostEqual(b.avg_dq(), 0.15)
+
+    def test_build_dashboard_aggregates_by_course_and_intent(self):
+        games = [self._game([
+            ("単打", 0.4, "ストライク先行"),
+            ("アウト", -0.1, "チェイス"),
+            ("空振り", 0.2, "ストライク先行"),
+        ], runs=1)]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            stats.build_dashboard(games)
+        out = buf.getvalue()
+        self.assertIn("外低", out)                # コース(短縮表記)が出る
+        self.assertIn("ストライク先行", out)
+        self.assertIn("チェイス", out)
+        self.assertIn("1 ゲーム", out)
+        self.assertIn("3 球", out)
 
 
 # ---------- 9 分割ゾーン ----------
