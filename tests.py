@@ -28,7 +28,7 @@ from fielding import resolve_batted_ball
 from ballpark_view import render_field
 from judge import judge_pitch
 from lineup import Lineup, build_sample_lineup, load_lineup_file
-from engine import log_pitch
+from engine import log_pitch, maybe_resolve_sign_steal, resolve_one_pitch
 from match_state import generate_random_situation
 from pitch_data import (
     PITCH_LIBRARY,
@@ -44,7 +44,7 @@ from qte import catcher_block, catcher_change_signs, catcher_throw, qte_enabled
 from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
 import replay
 import stats
-from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
+from strategy import PITCH_INTENTS, build_analysis, build_postgame_report, evaluate_sequencing, grade_reads
 from ui import render_analysis, render_dashboard, render_intro, render_play_result, render_spray
 import webapp
 
@@ -961,7 +961,7 @@ class WebAppTests(unittest.TestCase):
         cls.httpd.server_close()
 
     def setUp(self):
-        webapp.SESSION.new_game()
+        webapp.SESSION = webapp.GameSession()
 
     def _get(self, path=""):
         with urllib.request.urlopen(self.base + path) as r:
@@ -974,52 +974,126 @@ class WebAppTests(unittest.TestCase):
             return r.status
 
     def _first_pitch_key(self, page):
-        m = re.search(r'name="pitch_type">.*?<option value="([^"]+)"', page, re.S)
+        m = re.search(r'name="pitch_type" value="([^"]+)"', page)
         return m.group(1)
 
-    def test_get_root_renders_the_pitch_call_form(self):
+    def _start_game(self):
+        self._post("/start", {})
+        self._post("/playball", {})
+        return self._get("/")
+
+    def test_root_shows_start_screen_first(self):
         page = self._get("/")
-        self.assertIn("終盤の守り切りゲーム", page)
-        self.assertIn('action="/pitch"', page)
-        self.assertIn("投球", page)
+        self.assertIn("START GAME", page)
+        self.assertNotIn("CALL PITCH", page)
+
+    def test_start_shows_situation_intro_then_playball_reaches_game(self):
+        self._post("/start", {})
+        intro = self._get("/")
+        self.assertIn("PLAY BALL", intro)
+        self.assertIn("DEFEND THE LEAD", intro)
+        self.assertNotIn("CALL PITCH", intro)
+
+        self._post("/playball", {})
+        game = self._get("/")
+        self.assertIn("CALL PITCH", game)
+        self.assertIn('action="/pitch"', game)
 
     def test_post_pitch_advances_the_count_or_the_at_bat(self):
-        page = self._get("/")
+        page = self._start_game()
         pitch_key = self._first_pitch_key(page)
         status = self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid",
                                        "intent": "strike"})
         self.assertEqual(status, 200)
         page2 = self._get("/")
-        self.assertIn("カウント", page2)
+        self.assertIn("Pitch Call", page2)
+        self.assertIn("RESULT", page2)         # 直前の1球の結果パネルが出る
 
     def test_qte_is_forced_off_for_the_web_process(self):
+        self._start_game()
         self.assertFalse(webapp.SESSION.state is None)
         import qte
         self.assertFalse(qte.qte_enabled())
 
-    def test_driving_pitches_eventually_reaches_the_analysis_page(self):
-        rng = random.Random(0)
-        page = self._get("/")
-        for _ in range(200):
-            if "配球のふり返り" in page:
+    def test_driving_pitches_eventually_reaches_the_postgame_report(self):
+        page = self._start_game()
+        for _ in range(300):
+            if "CATCHER REPORT" in page:
                 break
             pitch_key = self._first_pitch_key(page)
             self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid",
                                   "intent": "strike"})
             page = self._get("/")
         else:
-            self.fail("200球投げてもイニングが終わらなかった")
+            self.fail("300球投げてもイニングが終わらなかった")
         self.assertIn("もう一度プレイ", page)
+        self.assertIn("Runs Allowed", page)
+        self.assertIn("Batters Faced", page)
+        self.assertIn("GOOD CALL", page)
+        self.assertIn("BAD CALL", page)
 
         self._post("/newgame", {})
         fresh = self._get("/")
-        self.assertNotIn("配球のふり返り", fresh)
-        self.assertIn('action="/pitch"', fresh)
+        self.assertIn("PLAY BALL", fresh)      # 新しいゲームはまず状況カードから
+
+    def test_course_grid_mirrors_by_batter_handedness(self):
+        r_grid = webapp._course_grid("R")
+        l_grid = webapp._course_grid("L")
+        # 右打者は内→外が左→右、左打者はその鏡像(放送のストライクゾーン表示と同じ考え方)
+        self.assertEqual(r_grid[0], ["in_hi", "mid_hi", "out_hi"])
+        self.assertEqual(l_grid[0], ["out_hi", "mid_hi", "in_hi"])
+        # どちらも同じ9コースを1回ずつ含む(表示順が違うだけ)
+        flat_r = {c for row in r_grid for c in row}
+        flat_l = {c for row in l_grid for c in row}
+        self.assertEqual(flat_r, flat_l)
+        self.assertEqual(len(flat_r), 9)
 
     def test_alignment_change_is_reflected(self):
+        self._start_game()
         status = self._post("/alignment", {"alignment": "bunt"})
         self.assertEqual(status, 200)
         self.assertEqual(webapp.SESSION.state.defense.alignment, "bunt")
+
+    def test_swap_click_click_flow(self):
+        page = self._start_game()
+        before = dict(webapp.SESSION.state.defense.assignment)
+        self._post("/swap", {"position": "SS"})
+        mid = self._get("/")
+        self.assertIsNotNone(webapp.SESSION.pending_swap)
+        self.assertIn("選択中", mid)
+        self._post("/swap", {"position": "1B"})
+        self.assertIsNone(webapp.SESSION.pending_swap)
+        after = webapp.SESSION.state.defense.assignment
+        self.assertIs(after["SS"], before["1B"])
+        self.assertIs(after["1B"], before["SS"])
+
+    def test_swap_same_position_twice_cancels_pending(self):
+        self._start_game()
+        self._post("/swap", {"position": "CF"})
+        self.assertEqual(webapp.SESSION.pending_swap, "CF")
+        self._post("/swap", {"position": "CF"})
+        self.assertIsNone(webapp.SESSION.pending_swap)
+
+    def test_memo_records_a_read(self):
+        self._start_game()
+        status = self._post("/memo", {"wait": "fastball", "weak": "out_lo"})
+        self.assertEqual(status, 200)
+        note = webapp.SESSION.state.current_read()
+        self.assertEqual(note["wait"], "fastball")
+        self.assertEqual(note["weak"], "out_lo")
+
+    def test_seed_reproducible_over_http(self):
+        def play_seeded(seed):
+            webapp.SESSION = webapp.GameSession(seed=seed)
+            self._post("/start", {})
+            self._post("/playball", {})
+            page = self._get("/")
+            pitch_key = self._first_pitch_key(page)
+            self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid", "intent": "strike"})
+            page = self._get("/")
+            return re.search(r"RESULT\s*(?:</[^>]+>)?\s*([^<]+)<", page).group(1)
+
+        self.assertEqual(play_seeded(555), play_seeded(555))
 
 
 # ---------- 9 分割ゾーン ----------
@@ -1094,6 +1168,47 @@ class StressTests(unittest.TestCase):
         self.assertGreater(xbh, 100)
         self.assertGreater(total_runs, 200)
         self.assertLess(total_runs / games, 4.0)   # 1半イニングの平均失点が暴走しない
+
+    def test_1000_games_through_full_engine_no_crash(self):
+        """engine.resolve_one_pitch() ―― CLI/Web が実際に呼ぶ入口 ―― を通しで
+        1000 ゲーム回す。振り逃げ・サイン盗み見・ブロッキング・盗塁など、
+        judge_pitch() だけでは通らない周辺イベントも含めて検証する。
+        """
+        rng = random.Random(99)
+        intents = list(PITCH_INTENTS)
+        courses = list(COURSES)
+        games = 1000
+        events_seen = set()
+
+        for g in range(games):
+            state = generate_random_situation(rng)
+            guard = 0
+            while not state.is_over():
+                guard += 1
+                self.assertLess(guard, 400, f"game {g}: 半イニングが終わらない")
+                for _ in maybe_resolve_sign_steal(state, rng):
+                    pass
+                pt = rng.choice(list(repertoire_options(state.pitcher)))
+                co = rng.choice(courses)
+                it = rng.choice(intents)
+                resolve_one_pitch(state, pt, co, it, rng)
+                self.assertTrue(0 <= state.lineup.index <= 8)
+            self.assertEqual(state.outs, 3)
+            events_seen.update(state.events)
+
+            report = build_postgame_report(state)
+            self.assertEqual(report["pitches"], len(state.pitch_log))
+            self.assertEqual(report["runs_allowed"], state.runs_this_inning)
+            self.assertGreaterEqual(report["batters_faced"], 1)
+            # 三振/四球/被安打/エラーの合計は、対戦打者数を超えない
+            self.assertLessEqual(
+                report["strikeouts"] + report["walks"] + report["hits"] + report["errors"],
+                report["batters_faced"])
+            build_analysis(state.pitch_log)   # 例外なく回ること
+
+        # 振り逃げ・サイン盗み見・盗塁・後逸など、周辺イベントが実際に一通り起きたか
+        for ev in ("振り逃げ", "サイン交換", "盗塁成功", "盗塁刺", "後逸"):
+            self.assertIn(ev, events_seen, f"1000ゲームで一度も『{ev}』が発生しなかった")
 
 
 if __name__ == "__main__":
