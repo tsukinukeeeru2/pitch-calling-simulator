@@ -133,11 +133,14 @@ def apply_result(state, outcome):
     elif result == "ファウル":
         if state.strikes < 2:
             state.strikes += 1
-    elif result in FAIR_HITS or result == "アウト":
+    elif result in FAIR_HITS or result in ("アウト", "エラー"):
         play = outcome["play"]
         if result in FAIR_HITS:
             extra = f"（{play['detail']}）" if play["detail"] else ""
             print(f">>> {play['label']}を打たれた!{extra}")
+        elif result == "エラー":
+            extra = f"（{play['detail']}）" if play["detail"] else ""
+            print(f">>> 味方のエラー！ 出塁を許した{extra}")
         else:
             note = play["label"] if play["label"] != "アウト" else play["detail"]
             print(">>> 打ち取った!" + (f"（{note}）" if note else ""))

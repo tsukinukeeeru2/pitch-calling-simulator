@@ -211,6 +211,26 @@ class FieldingTests(unittest.TestCase):
         bb = BattedBall("center", "ground", "medium", 0.5, "infield")
         self.assertGreater(self._out_rate(bb, d, slow), self._out_rate(bb, d, fast))
 
+    def test_weak_fielder_commits_more_errors(self):
+        def error_rate(skill, n=6000):
+            d, b = _defense_all_equal(skill), _batter()
+            bb = BattedBall("center", "ground", "medium", 0.5, "infield")
+            rng = random.Random(3)
+            return sum(resolve_batted_ball(bb, d, b, rng)["result"] == "エラー"
+                       for _ in range(n)) / n
+        self.assertGreater(error_rate(25), error_rate(75) + 0.01)
+
+    def test_error_is_never_scored_as_an_out(self):
+        d, b = _defense_all_equal(20), _batter()
+        bb = BattedBall("center", "ground", "hard", 0.9, "infield")
+        rng = random.Random(11)
+        for _ in range(2000):
+            fd = resolve_batted_ball(bb, d, b, rng)
+            if fd["result"] == "エラー":
+                self.assertFalse(fd["batter_out"])
+                self.assertFalse(fd["air_out"])
+                self.assertTrue(fd["error"])
+
 
 # ---------- 長打・走塁 (改良A) ----------
 def _fd(result, position="SS", batter_out=None, air_out=False):
@@ -240,6 +260,16 @@ class BaserunningTests(unittest.TestCase):
         self.assertEqual(play["runs"], 3)
         self.assertEqual(play["new_runners"], [False, True, False])
         self.assertEqual(play["outs_added"], 0)
+
+    def test_error_advances_batter_and_runners_like_a_single(self):
+        play = resolve_baserunning(BattedBall("center", "ground", "hard", 0.8, "infield"),
+                                   _fd("エラー", "SS"), [False, False, True], 0, _batter(),
+                                   random.Random(0))
+        self.assertEqual(play["batter_result"], "エラー")
+        self.assertEqual(play["label"], "エラー")
+        self.assertEqual(play["outs_added"], 0)
+        self.assertTrue(play["new_runners"][0])          # 打者は一塁へ
+        self.assertEqual(play["runs"], 1)                # 三塁走者は生還
 
     def test_double_play_removes_first_runner_and_adds_two_outs(self):
         bb = BattedBall("center", "ground", "medium", 0.5, "infield")
@@ -443,7 +473,7 @@ class IntegrationTests(unittest.TestCase):
         state = _state(4)
         rng = random.Random(0)
         seen = set()
-        fair = {"アウト", "単打", "二塁打", "三塁打", "本塁打"}
+        fair = {"アウト", "エラー", "単打", "二塁打", "三塁打", "本塁打"}
         for _ in range(3000):
             o = judge_pitch(state, "four_seam", "mid_mid", rng, intent="strike")
             seen.add(o["result"])

@@ -23,7 +23,7 @@ def _pips(filled, total, color):
 def _result_color(result):
     if result in ("アウト", "空振り", "三振"):
         return "bgreen"
-    if result in ("単打", "二塁打", "三塁打", "本塁打", "四球"):
+    if result in ("単打", "二塁打", "三塁打", "本塁打", "四球", "エラー"):
         return "bred"
     if result == "ボール":
         return "byellow"
@@ -131,7 +131,7 @@ def _spray_cell(entry):
     # 前後(飛距離)
     row = {"deep": 0, "shallow": 2, "infield": 4}[entry["distance"]]
     glyph, color = {
-        "アウト": ("·", "grey"), "単打": ("o", "white"),
+        "アウト": ("·", "grey"), "単打": ("o", "white"), "エラー": ("e", "byellow"),
         "二塁打": ("O", "byellow"), "三塁打": ("O", "byellow"), "本塁打": ("H", "bred"),
     }.get(entry["result"], ("?", "white"))
     return row, col, glyph, color
@@ -139,7 +139,7 @@ def _spray_cell(entry):
 
 def render_spray(state):
     title = ansi.bold("打球チャート（このゲーム）") + ansi.dim(
-        "   · アウト  o 単打  O 長打  H 本塁打")
+        "   · アウト  o 単打  e エラー  O 長打  H 本塁打")
     if not state.spray:
         return title + "\n  " + ansi.dim("（まだ打球なし）")
 

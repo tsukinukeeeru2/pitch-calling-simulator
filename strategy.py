@@ -273,7 +273,7 @@ _EXTRA_BASE = ("二塁打", "三塁打", "本塁打")
 
 
 def _result_is_bad(result):
-    return result in _HIT_RESULTS or result == "四球"
+    return result in _HIT_RESULTS or result in ("四球", "エラー")
 
 
 def _result_is_good(result, outcome):

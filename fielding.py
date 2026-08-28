@@ -28,6 +28,9 @@ BASE_OUT_PROB = {
 # 打球の強さによる補正
 HARDNESS_ADJUST = {"soft": +0.10, "medium": -0.02, "hard": -0.13}
 
+# エラー(処理できたはずの打球を落球・悪送球で出塁させてしまう)基準確率
+ERROR_BASE = 0.045
+
 
 def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
@@ -91,6 +94,21 @@ def _field_side(direction, bats):
     return "right" if pull_is_left else "left"   # oppo
 
 
+def _error_chance(overall, fit, hardness):
+    """アウトになるはずだった打球を、エラーで出塁させてしまう確率。
+
+    総合力・ポジション適性が高いほど下がり、強い打球ほど上がる。
+    """
+    chance = ERROR_BASE
+    chance -= (overall - 50) / 100 * 0.10
+    chance -= (fit - overall) / 100 * 0.04
+    if hardness == "hard":
+        chance += 0.02
+    elif hardness == "soft":
+        chance -= 0.015
+    return _clamp(chance, 0.01, 0.15)
+
+
 def responsible_position(batted_ball, bats, rng=None):
     """その打球をまず処理する野手のポジションを返す。"""
     rng = rng or random
@@ -145,15 +163,21 @@ def resolve_batted_ball(batted_ball, defense, batter, rng=None):
              + speed_adjustment)
     out_p = _clamp(out_p, 0.03, 0.97)
 
+    error_p = _error_chance(overall, fit, batted_ball.hardness)
     is_out = rng.random() < out_p
-    if is_out:
+    is_error = is_out and rng.random() < error_p
+    if is_error:
+        is_out = False
+        batter_result = "エラー"
+    elif is_out:
         batter_result = "アウト"
     else:
         batter_result = _hit_extent(batted_ball, batter, rng)
 
     return {
-        "result": batter_result,               # "アウト" / "単打" / "二塁打" / "三塁打" / "本塁打"
+        "result": batter_result,               # "アウト" / "エラー" / "単打" / "二塁打" / "三塁打" / "本塁打"
         "batter_out": is_out,
+        "error": is_error,
         "air_out": is_out and batted_ball.ball_type in ("fly", "line"),
         "position": position,
         "fielder": fielder.name,
@@ -165,5 +189,6 @@ def resolve_batted_ball(batted_ball, defense, batter, rng=None):
             "alignment": round(defensive_alignment_adjustment, 3),
             "batted_ball": round(batted_ball_adjustment, 3),
             "runner_speed": round(speed_adjustment, 3),
+            "error_chance": round(error_p, 3),
         },
     }

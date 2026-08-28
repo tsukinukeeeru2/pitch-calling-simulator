@@ -36,7 +36,7 @@ def _finish(result, outs_added, runs, new_runners, label, detail, outs_before):
 
 def resolve(batted_ball, fielding, runners, outs, batter, rng=None):
     rng = rng or random
-    result = fielding["result"]           # "アウト" / "単打" / "二塁打" / "三塁打" / "本塁打"
+    result = fielding["result"]           # "アウト" / "エラー" / "単打" / "二塁打" / "三塁打" / "本塁打"
     r1, r2, r3 = runners
     on = sum(runners)
     to_outfield = batted_ball.ball_type in ("line", "fly")
@@ -58,7 +58,7 @@ def resolve(batted_ball, fielding, runners, outs, batter, rng=None):
         detail = "走者一掃" if runs >= 2 else ("1点" if runs == 1 else "")
         return _finish("二塁打", 0, runs, [False, True, False], "二塁打", detail, outs)
 
-    if result == "単打":
+    if result in ("単打", "エラー"):
         new = [False, False, False]
         runs = 0
         if r3:
@@ -74,7 +74,7 @@ def resolve(batted_ball, fielding, runners, outs, batter, rng=None):
             else:
                 new[1] = True
         new[0] = True                                   # 打者は一塁
-        return _finish("単打", 0, runs, new, "単打", f"{runs}点" if runs else "", outs)
+        return _finish(result, 0, runs, new, result, f"{runs}点" if runs else "", outs)
 
     # ---------------- アウト系 ----------------
     ball_type = batted_ball.ball_type
