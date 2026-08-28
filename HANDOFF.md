@@ -33,6 +33,7 @@
 cd pitch-calling-simulator
 python main.py                                   # プレイ
 python main.py --lineup lineups/sample_team.json # 相手打線を差し替え
+python main.py --difficulty beginner             # ヒント多め / expert で打球チャートを隠す
 python tests.py                                  # 自動テスト（末尾に 1000 ゲームのストレス）
 python stats.py                                  # logs/ を集計した成績ダッシュボード
 python replay.py                                 # 直近のゲームを名場面だけリプレイ
@@ -114,6 +115,7 @@ python replay.py                                 # 直近のゲームを名場�
 - [x] 打席をまたぐ配球バレ（打者一巡で同じ打者と再戦したとき、前の打席の球種傾向を薄く覚えている）
 - [x] 成績ダッシュボード `stats.py`（複数ゲームログをコース別/意図別に集計、被弾率・decision_quality）
 - [x] リプレイビューア `replay.py`（1ゲームの名場面を時系列で振り返り、build_analysis()の分類を再利用）
+- [x] 難易度設定 `--difficulty beginner/normal/expert`（beginner はヒント表示追加、expert は打球チャート非表示。隠しパラメータには一切触れない）
 - [x] リズム / QTE：盗塁刺し（①反応 ②連打 ③送球リズム）、ブロッキング（方向ボタン 内/中/外 ＋ 1・2・3 リズム）、投手の暴投も同じブロッキング
 - [x] 試合後分析（結果 と 判断の質 を分けて評価）、読みメモの採点
 - [x] 色つき UI、打球チャート（ゲーム中に傾向が溜まる）

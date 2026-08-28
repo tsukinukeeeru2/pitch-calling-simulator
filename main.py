@@ -258,9 +258,15 @@ def play_one_pitch(state, rng):
     return outcome
 
 
+_DIFFICULTIES = ("beginner", "normal", "expert")
+
+
 def _parse_args():
     p = argparse.ArgumentParser(description="終盤の守り切りゲーム")
     p.add_argument("--lineup", help=".json / .csv の相手打線ファイル")
+    p.add_argument("--difficulty", choices=_DIFFICULTIES,
+                   default=os.environ.get("PITCHSIM_DIFFICULTY", "normal"),
+                   help="beginner=ヒント表示を増やす / expert=打球チャートを隠す（既定: normal）")
     return p.parse_args()
 
 
@@ -273,7 +279,7 @@ def main():
         print(f"打線ファイルを読み込みました: {args.lineup}")
 
     state = generate_random_situation(lineup_batters=batters)
-    print(render_intro())
+    print(render_intro(hints=(args.difficulty == "beginner")))
     print()
     print(render_situation_card(state))
 
@@ -281,7 +287,8 @@ def main():
     while not state.is_over():
         print()
         print(render_dashboard(state, last_outcome))
-        print(render_spray(state))
+        if args.difficulty != "expert":            # 上級者は打球チャートなしで読む
+            print(render_spray(state))
         print(render_field(state.defense, state.batter))
 
         action = choose_action(state)

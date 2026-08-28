@@ -39,7 +39,7 @@ from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
 import replay
 import stats
 from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
-from ui import render_analysis, render_dashboard, render_play_result, render_spray
+from ui import render_analysis, render_dashboard, render_intro, render_play_result, render_spray
 
 VALID_RESULTS = {"ストライク", "ボール", "空振り", "ファウル", "アウト",
                  "単打", "二塁打", "三塁打", "本塁打"}
@@ -590,6 +590,11 @@ class BCDETests(unittest.TestCase):
         self.assertEqual(len(lu.batters), 9)
         self.assertTrue(all(b.bats in ("R", "L") for b in lu.batters))
         self.assertGreaterEqual(len({b.type for b in lu.batters}), 4)
+
+    def test_intro_shows_hints_only_when_requested(self):
+        self.assertNotIn("初心者向けヒント", render_intro())
+        self.assertNotIn("初心者向けヒント", render_intro(hints=False))
+        self.assertIn("初心者向けヒント", render_intro(hints=True))
 
     def test_custom_lineup_is_used(self):
         batters = build_sample_lineup(random.Random(0))

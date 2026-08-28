@@ -29,6 +29,9 @@ python stats.py                                  # logs/ を集計した成績�
 python replay.py                                 # 直近のゲームを名場面だけリプレイ
 ```
 
+`--difficulty beginner`（ヒント表示を追加）/ `--difficulty expert`（打球チャートを隠す）で難易度を選べます（既定 `normal`、`PITCHSIM_DIFFICULTY` でも指定可）。
+どの難易度でも隠しパラメータ（狙い球のクセ・weak_course など）自体には一切触れません。
+
 プレイ中の操作: `Enter`=投球 / `d`=守備変更 / `m`=打者の読みをメモ / `w`=敬遠（一塁が空いているとき）/ `p`=継投（1回だけ）/ `q`=終了。
 投球は「球種 → コース（3×3 グリッド）→ 配球意図」。
 色は自動で付きます（パイプ・リダイレクト時は自動オフ。`PITCHSIM_COLOR=1` で強制オン、`NO_COLOR` で強制オフ）。
