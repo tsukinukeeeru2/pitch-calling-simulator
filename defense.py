@@ -26,7 +26,10 @@ ALIGNMENTS = {
     "infield_in": "前進守備",
     "no_doubles": "長打警戒",
     "dp": "ゲッツー重視",
+    "bunt": "バント警戒",
 }
+
+_CORNERS = ("1B", "3B")
 
 _INFIELD = ("1B", "2B", "3B", "SS")
 
@@ -118,6 +121,15 @@ class Defense:
                 return 0.07
             if position in ("1B", "3B") and ball_type == "ground":
                 return -0.05                  # 三遊間・一二塁間が広がる
+            return 0.0
+
+        if a == "bunt":                       # バント警戒(一塁・三塁が前に出る)
+            if position in _CORNERS and ball_type == "ground":
+                if batted_ball.hardness == "soft":
+                    return 0.14                # 転がした/バントを素早く処理
+                if batted_ball.hardness == "hard":
+                    return -0.12               # 詰めすぎて強い打球に反応できない
+                return -0.03                   # 普通の打球にも守備範囲が狭くなる
             return 0.0
 
         return 0.0

@@ -157,6 +157,17 @@ class DefenseTests(unittest.TestCase):
         self.assertGreater(at_1b.expected_defensive_efficiency(),
                            at_ss.expected_defensive_efficiency())
 
+    def test_bunt_alignment_helps_soft_grounders_hurts_hard_ones(self):
+        d = _defense_all_equal()
+        soft = BattedBall("pull", "ground", "soft", 0.1, "infield")
+        hard = BattedBall("pull", "ground", "hard", 0.9, "infield")
+        d.set_alignment("standard")
+        self.assertEqual(d.alignment_out_adjust("3B", soft), 0.0)
+        d.set_alignment("bunt")
+        self.assertGreater(d.alignment_out_adjust("3B", soft), 0.0)
+        self.assertLess(d.alignment_out_adjust("3B", hard), 0.0)
+        self.assertEqual(d.alignment_out_adjust("CF", soft), 0.0)   # 外野は影響なし
+
 
 # ---------- 打球・守備判定 ----------
 class BattedBallTests(unittest.TestCase):

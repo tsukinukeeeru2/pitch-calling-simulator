@@ -346,6 +346,10 @@ out_probability = base_out_probability          打球種類×飛距離ごとの
 守備メニュー（`main.py` の `d`）: select→select→**Swap**、守備シフト選択、
 **Expected Defensive Efficiency（参考値）** 表示（「最適解ではない」と明記）。
 
+守備シフトは 7 種類（標準／引っ張り警戒／逆方向警戒／前進守備／長打警戒／ゲッツー重視／**バント警戒**）。
+バント警戒は一塁・三塁が前に出る想定で、`defense.alignment_out_adjust()` が弱い打球（`soft`）はアウトにしやすく、
+強い打球（`hard`）はかえって弱くする（構え直す時間がない）。
+
 ---
 
 ## 球種の追加 — `pitch_data.PITCH_LIBRARY` に 1 エントリ
