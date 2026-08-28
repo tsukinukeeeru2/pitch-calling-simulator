@@ -580,6 +580,63 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(run_txt and status)
         self.assertEqual(state.outs, 3)
 
+    def test_same_seed_gives_same_engine_result_cli_and_web_share(self):
+        """CLI(main.py)・Web(webapp.py)はどちらも engine.resolve_one_pitch() を
+        直接呼ぶだけなので、この関数自体が seed で再現できれば両方とも再現できる。
+        """
+        def play(seed):
+            rng = random.Random(seed)
+            state = generate_random_situation(rng=rng)
+            calls = [("four_seam", "in_hi", "freeze"), ("slider", "out_lo", "chase"),
+                    ("changeup", "mid_lo", "weak_contact")]
+            out = []
+            for pt, co, it in calls:
+                if state.is_over():
+                    break
+                outcome, msgs = resolve_one_pitch(state, pt, co, it, rng)
+                out.append((outcome["result"], outcome["actual_course"], outcome["quality"]))
+            return out, state.our_score, state.opp_score, state.outs
+
+        self.assertEqual(play(4242), play(4242))
+        self.assertNotEqual(play(4242), play(4243))
+
+    def test_defense_swap_changes_who_fields_the_ball(self):
+        """Swap後は実際の判定(fielding)にも新しい配置がそのまま使われる。"""
+        state = _state(8)
+        before = state.defense.fielder_at("SS")
+        other = state.defense.fielder_at("1B")
+        state.defense.swap("SS", "1B")
+        self.assertIs(state.defense.fielder_at("SS"), other)
+        self.assertIs(state.defense.fielder_at("1B"), before)
+        # 判定チェーン(fielding.resolve_batted_ball)はDefenseを直接参照するので、
+        # 同じオブジェクトを見ている以上、Swap後の配置がそのまま使われる
+        bb = BattedBall("center", "ground", "medium", 0.5, "infield")
+        fd = resolve_batted_ball(bb, state.defense, state.batter, random.Random(0))
+        if fd["position"] in ("SS", "1B"):
+            self.assertEqual(fd["fielder"], state.defense.fielder_at(fd["position"]).name)
+
+    def test_postgame_report_separates_result_from_judgment(self):
+        from strategy import build_postgame_report
+        state = _state(9)
+        rng = random.Random(9)
+        guard = 0
+        while not state.is_over():
+            guard += 1
+            self.assertLess(guard, 400)
+            pt = rng.choice(list(repertoire_options(state.pitcher)))
+            co = rng.choice(list(COURSES))
+            it = rng.choice(list(PITCH_INTENTS))
+            resolve_one_pitch(state, pt, co, it, rng)
+        report = build_postgame_report(state)
+        for key in ("runs_allowed", "batters_faced", "pitches", "strikeouts", "walks", "hits"):
+            self.assertIn(key, report)
+        self.assertIn("avg_quality", report["pitch_execution"])
+        self.assertIn("final_ede", report["defense"])
+        a = build_analysis(state.pitch_log)
+        # 「結果」だけの report と「判断」だけの analysis は別々の入れ物になっている
+        self.assertNotIn("decision_quality", report)
+        self.assertIn("avg_decision_quality", a)
+
 
 # ---------- 改良B/C/D/E ----------
 class BCDETests(unittest.TestCase):
