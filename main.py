@@ -208,6 +208,21 @@ def play_one_pitch(state, rng):
     result = outcome["result"]
     ac = outcome["actual_course"]
 
+    # ワンバウンドの三振 + 振り逃げが成立しうる(一塁が空 or 2アウト) → 振り逃げ判定
+    if (result == "空振り" and state.strikes == 2 and outcome["missed"]
+            and state.dropped_third_eligible()):
+        low_dirt = zone_y(ac) == "lo" and not outcome["in_zone"]
+        if low_dirt or rng.random() < 0.30:
+            why = "一塁が空いている" if not state.runners[0] else "2アウト"
+            print(f">>> ワンバウンド三振！ 振り逃げのチャンス（{why}）")
+            hard = is_corner(ac)
+            block_bonus = catcher_block(zone_x(ac), wild=not low_dirt, rng=rng)
+            safe, msg = state.resolve_dropped_third(
+                block_bonus, lambda: catcher_throw(rng, base="一塁", title="拾った！ 一塁へ送れ"),
+                rng, hard=hard)
+            print(f">>> {msg}")
+            return outcome
+
     # ワンバウンド / 暴投 + 走者あり → ブロッキング(方向ボタン + 1・2・3 のリズム)
     if any(state.runners) and outcome["missed"] and result in ("ボール", "空振り"):
         low_dirt = zone_y(ac) == "lo" and not outcome["in_zone"]

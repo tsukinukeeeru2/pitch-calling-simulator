@@ -119,14 +119,18 @@ def rhythm_check(cue, beats=3, interval=0.55, perfect=0.35, good=0.75):
 
 
 # --- 組み合わせ ---
-def catcher_throw(rng=None):
-    """盗塁を刺す 3 段階。返り値: throw_bonus(-0.25〜0.25、大きいほど刺しやすい)。"""
+def catcher_throw(rng=None, base="二塁", title="走った！ 盗塁を刺せ"):
+    """走者を刺す 3 段階(盗塁の二塁送球 / 振り逃げの一塁送球で共用)。
+
+    base  : 送球先の表示("二塁" / "一塁")
+    返り値: throw_bonus(-0.25〜0.25、大きいほど刺しやすい)。
+    """
     if not qte_enabled():
         return 0.0
-    print(ansi.bold(ansi.yellow("\n═══ 走った！ 盗塁を刺せ ═══")))
+    print(ansi.bold(ansi.yellow(f"\n═══ {title} ═══")))
     g1 = reaction_check("① スタートに気づけ", perfect=0.42, good=0.95)
     g2 = mash_check("② グラブから握り替え", need=10, limit=2.4)
-    g3 = rhythm_check("③ 二塁へ一直線に送球", beats=1, interval=0.5, perfect=0.35, good=0.7)
+    g3 = rhythm_check(f"③ {base}へ一直線に送球", beats=1, interval=0.5, perfect=0.35, good=0.7)
     total = _BONUS[g1] + _BONUS[g2] + _BONUS[g3]
     return max(-0.25, min(0.25, total))
 

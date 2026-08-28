@@ -672,6 +672,69 @@ class GameplayExtrasTests(unittest.TestCase):
         st.runners, st.outs = [True, False, False], 0
         self.assertTrue(any(st.steal_chance(random.Random(s)) for s in range(50)))
 
+    # ---- 振り逃げ ----
+    def test_dropped_third_eligibility(self):
+        st = _state(1)
+        st.runners, st.outs = [True, False, False], 0    # 一塁埋まり・2アウト未満 → 不成立
+        self.assertFalse(st.dropped_third_eligible())
+        st.runners, st.outs = [False, False, False], 0   # 一塁が空 → 成立
+        self.assertTrue(st.dropped_third_eligible())
+        st.runners, st.outs = [True, False, False], 2     # 2アウト → 成立
+        self.assertTrue(st.dropped_third_eligible())
+
+    def test_dropped_third_passed_ball_advances_all_runners(self):
+        for s in range(200):
+            st = _state(s % 20)
+            st.runners, st.outs = [False, True, True], 0
+            before_score = st.opp_score
+            called = []
+            safe, msg = st.resolve_dropped_third(
+                -0.9, lambda: called.append(1) or 0.0, random.Random(s))
+            if "後逸" in msg:
+                self.assertTrue(safe)
+                self.assertEqual(st.runners, [True, False, True])   # 2塁→3塁、3塁は生還
+                self.assertEqual(st.opp_score, before_score + 1)
+                self.assertEqual(called, [])         # 後逸なら送球QTEは呼ばれない
+                return
+        self.fail("後逸が一度も発生しなかった")
+
+    def test_dropped_third_resolves_to_safe_or_out(self):
+        safe_n = out_n = 0
+        for s in range(400):
+            st = _state(s % 20)
+            st.runners, st.outs = [False, False, False], 0
+            safe, msg = st.resolve_dropped_third(0.25, lambda: 0.0, random.Random(s))
+            if safe:
+                safe_n += 1
+                self.assertTrue(st.runners[0])
+            else:
+                out_n += 1
+                self.assertEqual(st.outs, 1)
+        self.assertGreater(safe_n, 0)
+        self.assertGreater(out_n, 0)
+
+    def test_dropped_third_good_throw_catches_more(self):
+        def safe_rate(throw_bonus):
+            safe_n = 0
+            for s in range(500):
+                st = _state(s % 20)
+                st.runners, st.outs = [False, False, False], 0
+                safe, msg = st.resolve_dropped_third(0.25, lambda: throw_bonus, random.Random(s))
+                if safe and "後逸" not in msg:
+                    safe_n += 1
+            return safe_n / 500
+        self.assertGreater(safe_rate(-0.25), safe_rate(0.25) + 0.1)
+
+    def test_dropped_third_safe_by_throw_only_forces_runners(self):
+        for s in range(300):
+            st = _state(s % 20)
+            st.runners, st.outs = [False, True, False], 0    # 二塁のみ
+            safe, msg = st.resolve_dropped_third(0.9, lambda: -0.9, random.Random(s))
+            if safe and "後逸" not in msg:
+                self.assertEqual(st.runners, [True, True, False])   # 二塁走者は進塁を強制されない
+                return
+        self.fail("送球で生きるケースが一度も発生しなかった")
+
 
 # ---------- 9 分割ゾーン ----------
 class ZoneTests(unittest.TestCase):

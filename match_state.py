@@ -142,6 +142,44 @@ class MatchState:
         self.events.append("後逸")
         return "後逸！ 走者が進んだ"
 
+    # ---- 振り逃げ(#ゲーム性) ----
+    def dropped_third_eligible(self):
+        """一塁が空いている、または 2 アウト → 振り逃げが成立しうる(公式ルールどおり)。"""
+        return (not self.runners[0]) or self.outs >= 2
+
+    def resolve_dropped_third(self, block_bonus, get_throw_bonus, rng, hard=False):
+        """振り逃げ。ワンバウンドの三振を捕手が後逸/捕れなかったときに呼ぶ
+        (dropped_third_eligible が True の前提)。
+
+        1) pass_p(完全に後逸する確率)は resolve_block と同じ式。後逸なら打者は無条件で
+           一塁へ、ほかの走者も 1 つ進む(3 塁走者は生還) — 通常の後逸と同じ扱い。
+        2) 後逸でなければ捕手はボールを止められている。一塁へ送球
+          (get_throw_bonus() は必要なときだけ呼ぶ = 後逸ならQTEをやらせない)。
+           safe_p は打者の脚力と送球のうまさで決まる。セーフなら打者は一塁へ(強制進塁のみ、
+           advance_on_walk と同じ考え方)。アウトなら普通の三振と同じ。
+        返り値: (safe: bool, message: str)。
+        """
+        self.events.append("振り逃げ")
+        pass_p = max(0.05, min(0.9, 0.45 - block_bonus + (0.12 if hard else 0.0)))
+        if rng.random() < pass_p:
+            if self.runners[2]:
+                self._score_runs(1)
+            self.runners = [True, self.runners[0], self.runners[1]]
+            self.next_batter()
+            return True, "後逸！ 振り逃げが成立、打者は一塁へ生きた"
+
+        speed = self.batter.speed
+        throw_bonus = get_throw_bonus()
+        safe_p = 0.28 + (speed - 50) / 100 * 0.40 - throw_bonus
+        if rng.random() < max(0.04, min(0.9, safe_p)):
+            self.advance_on_walk()
+            return True, "一塁送球が間に合わず、振り逃げが成立！"
+
+        self.outs += 1
+        if self.outs < 3:
+            self.next_batter()
+        return False, "一塁で刺した！ 三振"
+
     @property
     def score_diff(self):
         return self.our_score - self.opp_score
