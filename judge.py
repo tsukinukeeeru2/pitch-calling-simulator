@@ -122,6 +122,11 @@ def judge_pitch(state, pitch_type, target_course="middle", rng=None, intent="str
 
     # 2. GUESS(打者の狙い。隠し情報)
     guess = batter.predict_guess(history, state, pitcher)
+    # サインを見破られていたら(#B)、この 1 球だけ狙いを実際の球種に強く合わせる
+    if getattr(state, "sign_leak", 0.0) > 0:
+        guess = dict(guess, **{"class": guess_class2,
+                               "class_strength": max(guess["class_strength"], state.sign_leak)})
+        state.sign_leak = 0.0
 
     # 3. SEQUENCING(前球が次を活かす)
     call = {"pitch_type": pitch_type, "target_course": target_course, "intent": intent}

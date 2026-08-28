@@ -25,7 +25,7 @@ from lineup import load_lineup_file
 from match_state import generate_random_situation
 from constants import is_corner, zone_x, zone_y
 from pitch_data import family_of, repertoire_options, velocity_of
-from qte import catcher_block, catcher_throw
+from qte import catcher_block, catcher_change_signs, catcher_throw
 from reaction import describe_reaction
 from strategy import PITCH_INTENTS, grade_reads
 from ui import (
@@ -191,6 +191,13 @@ def save_game_log(state):
 
 
 def play_one_pitch(state, rng):
+    # 二塁走者にサインを覗われるリスク(打席途中いつでも)
+    if state.sign_steal_chance(rng):
+        print(">>> 二塁走者がサインを覗っている気配…")
+        sign_bonus = catcher_change_signs(rng)
+        msg = state.resolve_sign_steal(sign_bonus, rng)
+        print(f">>> {msg}")
+
     pitch_type = choose("球種:", repertoire_options(state.pitcher))
     course = choose_course()
     intent = choose("配球意図:", PITCH_INTENTS)

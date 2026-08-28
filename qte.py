@@ -135,6 +135,20 @@ def catcher_throw(rng=None, base="二塁", title="走った！ 盗塁を刺せ")
     return max(-0.25, min(0.25, total))
 
 
+def catcher_change_signs(rng=None):
+    """二塁走者にサインを覗われかけたとき、素早くサインを変える。
+
+    返り値: sign_bonus(-0.25〜0.25、大きいほどサインを守れる)。
+    """
+    if not qte_enabled():
+        return 0.0
+    print(ansi.bold(ansi.yellow("\n═══ 二塁走者がサインを覗っている！ サインを変えろ ═══")))
+    g1 = mash_check("① 指を素早く動かしてサインを変える", need=8, limit=2.0)
+    g2 = reaction_check("② 新しいサインで合図し直す", perfect=0.40, good=0.9)
+    total = _BONUS[g1] + _BONUS[g2]
+    return max(-0.25, min(0.25, total))
+
+
 def catcher_block(correct_dir="mid", wild=False, rng=None):
     """ワンバウンド / 暴投を体で止める。
 

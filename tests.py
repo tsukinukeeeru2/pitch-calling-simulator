@@ -34,7 +34,7 @@ from pitch_data import (
     velocity_of,
 )
 from pitcher import Pitcher, build_sample_pitcher
-from qte import catcher_block, catcher_throw, qte_enabled
+from qte import catcher_block, catcher_change_signs, catcher_throw, qte_enabled
 from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
 from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
 from ui import render_analysis, render_dashboard, render_play_result, render_spray
@@ -681,6 +681,7 @@ class GameplayExtrasTests(unittest.TestCase):
         self.assertFalse(qte_enabled())              # テストは端末ではない
         self.assertEqual(catcher_throw(random.Random(0)), 0.0)
         self.assertEqual(catcher_block("mid", rng=random.Random(0)), 0.0)
+        self.assertEqual(catcher_change_signs(random.Random(0)), 0.0)
 
     def test_block_direction_grading(self):
         import qte
@@ -712,6 +713,34 @@ class GameplayExtrasTests(unittest.TestCase):
         self.assertFalse(any(st.steal_chance(random.Random(s)) for s in range(50)))
         st.runners, st.outs = [True, False, False], 0
         self.assertTrue(any(st.steal_chance(random.Random(s)) for s in range(50)))
+
+    # ---- サイン交換 ----
+    def test_sign_steal_needs_runner_on_second(self):
+        st = _state(1)
+        st.runners = [True, False, True]                # 二塁だけ空き → リスクなし
+        self.assertFalse(any(st.sign_steal_chance(random.Random(s)) for s in range(50)))
+        st.runners = [False, True, False]
+        self.assertTrue(any(st.sign_steal_chance(random.Random(s)) for s in range(50)))
+
+    def test_good_sign_change_defends_more_often(self):
+        def defend_rate(sign_bonus):
+            defended = 0
+            for s in range(400):
+                st = _state(s % 20)
+                msg = st.resolve_sign_steal(sign_bonus, random.Random(s))
+                defended += (msg == "サインを変えて事なきを得た")
+            return defended / 400
+        self.assertGreater(defend_rate(0.25), defend_rate(-0.25) + 0.2)
+
+    def test_sign_leak_boosts_next_guess_only_once(self):
+        st = _state(2)
+        st.runners = [False, True, False]
+        st.sign_leak = 0.65
+        outcome = judge_pitch(st, "changeup", "mid_mid", random.Random(3), intent="strike")
+        guess = outcome["_analysis"]["guess"]
+        self.assertEqual(guess["class"], "offspeed")     # changeup の実際のクラスに一致
+        self.assertGreaterEqual(guess["class_strength"], 0.65)
+        self.assertEqual(st.sign_leak, 0.0)              # 1球で消費される
 
     # ---- 振り逃げ ----
     def test_dropped_third_eligibility(self):

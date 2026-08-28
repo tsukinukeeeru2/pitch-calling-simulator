@@ -48,6 +48,7 @@ class MatchState:
         self.bullpen = None              # 継投用の控え投手(main が用意)
         self.pitching_changes = 0
         self.events = []                 # 盗塁など、打席途中の出来事のログ
+        self.sign_leak = 0.0             # サインを見破られた次の1球だけ、打者の狙いを強める(#B)
 
     # ---- judge.py が使う ----
     @property
@@ -141,6 +142,28 @@ class MatchState:
         self.runners = [False, self.runners[0], self.runners[1]]
         self.events.append("後逸")
         return "後逸！ 走者が進んだ"
+
+    # ---- サイン交換(#ゲーム性・リズム) ----
+    def sign_steal_chance(self, rng):
+        """二塁に走者がいるときだけ、サインを覗われるリスクがある。"""
+        if not self.runners[1]:
+            return False
+        return rng.random() < 0.15
+
+    def resolve_sign_steal(self, sign_bonus, rng):
+        """サインを覗われたときの対応(sign_steal_chance が True のときに呼ぶ)。
+
+        defend_p(サインを守れる確率) = 0.55 + sign_bonus(サイン交換 QTE のうまさ)。
+        守れなければ次の 1 球だけ、打者の狙いが実際の球種に強く一致する(sign_leak)。
+        judge.py がこれを見て guess を上書きし、1 球使ったら 0 に戻す。
+        返り値: 出来事の文字列。
+        """
+        self.events.append("サイン交換")
+        defend_p = max(0.10, min(0.95, 0.55 + sign_bonus))
+        if rng.random() < defend_p:
+            return "サインを変えて事なきを得た"
+        self.sign_leak = 0.65
+        return "二塁走者にサインを見抜かれた！ 気をつけろ"
 
     # ---- 振り逃げ(#ゲーム性) ----
     def dropped_third_eligible(self):
