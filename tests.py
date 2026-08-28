@@ -36,6 +36,7 @@ from pitch_data import (
 from pitcher import Pitcher, build_sample_pitcher
 from qte import catcher_block, catcher_change_signs, catcher_throw, qte_enabled
 from reaction import FACE_CATEGORIES, describe_reaction, render_reaction_block
+import replay
 import stats
 from strategy import PITCH_INTENTS, build_analysis, evaluate_sequencing, grade_reads
 from ui import render_analysis, render_dashboard, render_play_result, render_spray
@@ -882,6 +883,50 @@ class StatsTests(unittest.TestCase):
         self.assertIn("チェイス", out)
         self.assertIn("1 ゲーム", out)
         self.assertIn("3 球", out)
+
+
+# ---------- リプレイビューア(replay.py) ----------
+class ReplayTests(unittest.TestCase):
+    def _entry(self, num, result, dq, sequence_label="特筆なし"):
+        return {
+            "pitch_number": num, "call_label": "four_seam/mid_mid(ストライク先行)",
+            "result": result, "decision_quality": dq, "sequence_label": sequence_label,
+            "guess": {"class": "fastball", "class_strength": 0.1,
+                     "location": "any", "loc_strength": 0.1},
+            "fooled_guess": False, "alignment_helped": False, "missed": False,
+            "outcome_flags": {"swung": True, "in_zone": True},
+        }
+
+    def test_collect_highlights_tags_good_and_risky_calls(self):
+        pitches = [self._entry(1, "空振り", 0.4), self._entry(2, "本塁打", -0.5)]
+        analysis = build_analysis(pitches)
+        highlights = replay._collect_highlights(analysis)
+        self.assertIn(1, highlights)
+        self.assertIn(2, highlights)
+        labels_1 = [label for label, _ in highlights[1]]
+        self.assertIn("◎良い配球", labels_1)
+
+    def test_render_replay_includes_summary_and_highlighted_pitches(self):
+        log = {
+            "situation": {"inning": "9回裏", "start": [3, 3]},
+            "final": {"our": 3, "opp": 4, "runs_this_inning": 1,
+                     "result": "1失点", "status": "逆転された"},
+            "pitches": [self._entry(1, "空振り", 0.4), self._entry(2, "本塁打", -0.5),
+                       self._entry(3, "ボール", 0.0)],
+            "reads": {},
+        }
+        out = replay.render_replay(log)
+        self.assertIn("9回裏", out)
+        self.assertIn("1失点", out)
+        self.assertIn(" 1球目", out)
+        self.assertIn(" 2球目", out)
+        self.assertNotIn(" 3球目", out)             # 目立たない球は出さない
+
+    def test_render_replay_handles_no_highlights(self):
+        log = {"situation": {}, "final": {},
+              "pitches": [self._entry(1, "ボール", 0.0)]}
+        out = replay.render_replay(log)
+        self.assertIn("目立った場面はありませんでした", out)
 
 
 # ---------- 9 分割ゾーン ----------
