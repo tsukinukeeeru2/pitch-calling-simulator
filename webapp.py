@@ -32,7 +32,7 @@ os.environ["PITCHSIM_QTE"] = "0"
 from constants import COURSE_SHORT
 from defense import ALIGNMENTS
 from lineup import load_lineup_file
-from main import maybe_resolve_sign_steal, resolve_one_pitch, save_game_log
+from engine import maybe_resolve_sign_steal, resolve_one_pitch, save_game_log
 from match_state import generate_random_situation
 from pitch_data import repertoire_options
 from strategy import PITCH_INTENTS, build_analysis, grade_reads

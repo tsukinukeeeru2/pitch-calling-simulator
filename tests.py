@@ -28,7 +28,7 @@ from fielding import resolve_batted_ball
 from ballpark_view import render_field
 from judge import judge_pitch
 from lineup import Lineup, build_sample_lineup, load_lineup_file
-from main import log_pitch
+from engine import log_pitch
 from match_state import generate_random_situation
 from pitch_data import (
     PITCH_LIBRARY,
