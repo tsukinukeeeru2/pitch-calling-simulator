@@ -1244,7 +1244,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(webapp.SESSION.state.defense.alignment, "bunt")
 
     def test_swap_click_click_flow(self):
-        page = self._start_game()
+        self._start_game()
         before = dict(webapp.SESSION.state.defense.assignment)
         self._post("/swap", {"position": "SS"})
         mid = self._get("/")

@@ -237,7 +237,6 @@ def _defense_synergy(defense, batter):
 def catcher_decision_quality(call, actual, batter, guess, guess_class2, timing,
                              history, state, seq):
     """良し悪しの内部スコア(-1〜+1)。結果は決めない。"""
-    fam = family_of(call["pitch_type"])
     actual_course = actual["actual_course"]
 
     dq = 0.0

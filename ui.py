@@ -90,7 +90,7 @@ def render_dashboard(state, last_outcome):
 
     head = ansi.bold(ansi.cyan(f"═══ {state.inning_label()} ═══"))
     score = f"相手 {ansi.bold(state.opp_score)} - {ansi.green(state.our_score)} 自軍"
-    line1 = f" {head}  {score}   球数 {state.pitcher.pitches_thrown}{tire}"
+    line1 = f" {head}  {score}   投手{hand}　球数 {state.pitcher.pitches_thrown}{tire}"
     line2 = (f"   OUT {_pips(state.outs, 3, 'bred')}    "
              f"B {_pips(state.balls, 4, 'byellow')}   S {_pips(state.strikes, 3, 'bcyan')}")
 
