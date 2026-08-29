@@ -68,7 +68,7 @@ python replay.py                                 # 直近のゲームを名場�
 同じ場面・同じ結果が再現できる（テスト `test_same_seed_gives_same_engine_result_cli_and_web_share` /
 `test_seed_reproducible_over_http` で担保）。
 
-## モジュール地図（23 ファイル）
+## モジュール地図（25 ファイル、tests.py除く）
 
 ### Game Engine（CLI・Web 共通、表示に依存しない層）
 
