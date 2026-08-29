@@ -330,7 +330,7 @@ def build_analysis(pitch_log):
         dq = entry["decision_quality"]
         dq_values.append(dq)
         num = entry["pitch_number"]
-        label = entry["call_label"]
+        label = entry.get("call_label_ja", entry["call_label"])   # 表示用。なければ内部表記のまま
         result = entry["result"]
 
         if dq >= 0.25:

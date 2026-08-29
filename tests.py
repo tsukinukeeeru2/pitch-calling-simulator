@@ -21,7 +21,7 @@ from contextlib import redirect_stdout
 from baserunning import resolve as resolve_baserunning
 from batted_ball import BattedBall, generate_batted_ball
 from batter import Batter
-from constants import COURSES
+from constants import COURSE_SHORT, COURSES
 from defense import ALIGNMENTS, Defense, make_default_defense
 from fielders import POSITIONS, Fielder, make_default_fielders, position_fit, weakest_fielder
 from fielding import resolve_batted_ball
@@ -36,6 +36,7 @@ from pitch_data import (
     family_of,
     get_pitch,
     guess_class_of,
+    pitch_name,
     repertoire_options,
     velocity_of,
 )
@@ -557,6 +558,22 @@ class IntegrationTests(unittest.TestCase):
             self.assertNotIn("decision", text.lower())
             self.assertNotIn("判断の質", text)
             self.assertNotIn(dq, text)
+
+    def test_postgame_report_uses_localized_pitch_and_course_names(self):
+        """ふり返り画面(CLI/Web共通)に "sinker/mid_mid" のような内部キーの
+        生の文字列ではなく、日本語の球種名・コース短縮表記が出ること。
+        call_label(stats.py が解析する内部表記)自体は変えない。
+        """
+        state = _state(11)
+        rng = random.Random(11)
+        while not state.is_over():
+            resolve_one_pitch(state, "sinker", "mid_mid", "strike", rng)
+        entry = state.pitch_log[0]
+        self.assertEqual(entry["call_label"], f"sinker/mid_mid({PITCH_INTENTS['strike'].split('（')[0]})")
+        self.assertIn(pitch_name("sinker"), entry["call_label_ja"])
+        self.assertIn(COURSE_SHORT["mid_mid"], entry["call_label_ja"])
+        self.assertNotIn("sinker", entry["call_label_ja"])
+        self.assertNotIn("mid_mid", entry["call_label_ja"])
 
     def test_reaction_does_not_print_hidden_pitch_key(self):
         state = _state(6)

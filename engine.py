@@ -23,9 +23,9 @@ import datetime as _dt
 import json
 import os
 
-from constants import is_corner, zone_x, zone_y
+from constants import COURSE_SHORT, is_corner, zone_x, zone_y
 from judge import judge_pitch
-from pitch_data import family_of, velocity_of
+from pitch_data import family_of, pitch_name, velocity_of
 from qte import catcher_block, catcher_change_signs, catcher_throw
 from reaction import describe_reaction
 from strategy import PITCH_INTENTS, grade_reads
@@ -94,6 +94,12 @@ def log_pitch(state, outcome):
         "intent": outcome["intent"],
         "call_label": f"{outcome['pitch_type']}/{outcome['actual_course']}"
                       f"({PITCH_INTENTS[outcome['intent']].split('（')[0]})",
+        # ふり返り画面(CLI/Web共通)の表示専用。内部キーそのままだと
+        # "sinker/mid_mid" のように読みにくいので、球種名・コースの短縮表記に
+        # 差し替えたもの。call_label 自体は stats.py が正規表現で解析する
+        # 決まった書式なので変えない。
+        "call_label_ja": f"{pitch_name(outcome['pitch_type'])}/{COURSE_SHORT[outcome['actual_course']]}"
+                         f"({PITCH_INTENTS[outcome['intent']].split('（')[0]})",
         "result": outcome["result"],
         "decision_quality": an["decision_quality"],
         "sequence_label": an["sequence_label"],

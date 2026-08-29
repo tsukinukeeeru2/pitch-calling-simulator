@@ -64,7 +64,8 @@ def render_replay(log):
         if entry is None:
             continue
         tag_text = " / ".join(ansi.paint(label, color) for label, color in highlights[num])
-        lines.append(f"  {num:>2}球目  {entry['call_label']:<26} → {entry['result']:<6}"
+        call_label = entry.get("call_label_ja", entry["call_label"])
+        lines.append(f"  {num:>2}球目  {call_label:<20} → {entry['result']:<6}"
                      f"  decision_quality={entry['decision_quality']:+.2f}")
         lines.append(f"          {tag_text}")
         if entry.get("sequence_label") and entry["sequence_label"] != "特筆なし":
