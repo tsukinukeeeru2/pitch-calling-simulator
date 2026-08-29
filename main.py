@@ -102,6 +102,20 @@ def defense_menu(defense):
             return
 
 
+def change_pitcher_menu(state):
+    """控え投手が複数いれば選ばせる(1 人なら自動で出す)。"""
+    if len(state.bullpen) == 1:
+        index = 0
+    else:
+        options = {str(i): f"{p.name}（{'右' if p.throws == 'R' else '左'}投）"
+                   for i, p in enumerate(state.bullpen)}
+        index = int(choose("継投: マウンドに送る投手を選択:", options))
+    new_pitcher = state.change_pitcher(index)
+    if new_pitcher:
+        print(f">>> 継投。マウンドに {new_pitcher.name}（{'右' if new_pitcher.throws == 'R' else '左'}投）。"
+              "球数はリセット。持ち球・調子は投げてみるまで分からない。")
+
+
 def memo_menu(state):
     """この打者の『読み』を記録する(#B)。試合後に正解と照合される。"""
     print(f"\n打者 #{state.lineup.spot_number()} についての読み")
@@ -190,9 +204,7 @@ def main():
             last_outcome = None
             continue
         if action == "change":
-            if state.change_pitcher():
-                print(f">>> 継投。マウンドに {state.pitcher.name}（{'右' if state.pitcher.throws == 'R' else '左'}投）。"
-                      "球数はリセット。持ち球・調子は投げてみるまで分からない。")
+            change_pitcher_menu(state)
             continue
 
         last_outcome = play_one_pitch(state, rng)

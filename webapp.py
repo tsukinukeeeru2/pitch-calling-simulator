@@ -160,6 +160,14 @@ a {{ color:var(--accent); }}
 .field .homeplate {{ position:absolute; left:50%; bottom:4%; transform:translateX(-50%);
                      color:#fff; font-size:.75em; text-align:center; }}
 .field-legend {{ font-size:.82em; color:var(--sub); margin-top:.4em; }}
+/* SS/2B・3B/1B が横に近接して並ぶため、球場図が狭くなるほどボタン幅を
+   縮めないと隣同士が重なる(実機/狭幅ブラウザで確認して発覚)。 */
+@media (max-width: 480px) {{
+  .posbtn button {{ width:50px; padding:.25em .15em; font-size:.66em; }}
+}}
+@media (max-width: 360px) {{
+  .posbtn button {{ width:42px; padding:.2em .1em; font-size:.6em; }}
+}}
 
 /* --- 打者カード --- */
 .batter-now {{ border:1px solid var(--line); border-radius:8px; padding:.7em .8em; }}
@@ -206,10 +214,13 @@ button.primary {{ background:var(--accent); color:#fff; border-color:var(--accen
 button.big {{ font-size:1.1em; padding:.7em 1.6em; }}
 
 /* --- 配球履歴 --- */
-table.history {{ width:100%; border-collapse:collapse; font-size:.9em; }}
+/* 狭い画面では 4 列に「フォーシーム」等の長い語が入るため、幅を詰めて
+   途中で折り返すより横スクロールさせたほうが読みやすい。 */
+.tablescroll {{ overflow-x:auto; -webkit-overflow-scrolling:touch; }}
+table.history {{ width:100%; min-width:360px; border-collapse:collapse; font-size:.9em; }}
 table.history th {{ text-align:left; color:var(--sub); font-weight:600; padding:.25em .4em;
-                     border-bottom:1px solid var(--line); }}
-table.history td {{ padding:.3em .4em; border-bottom:1px solid #eef1f4; }}
+                     border-bottom:1px solid var(--line); white-space:nowrap; }}
+table.history td {{ padding:.3em .4em; border-bottom:1px solid #eef1f4; white-space:nowrap; }}
 .res-strike {{ color:var(--accent); }} .res-ball {{ color:var(--warn); }}
 .res-hit {{ color:var(--bad); font-weight:700; }} .res-out {{ color:var(--good); }}
 
@@ -555,10 +566,10 @@ def render_pitch_history(state, limit=8):
     return f"""
 <div class="card">
   <h3>Pitch History（直近{limit}球・新しい順）</h3>
-  <table class="history">
+  <div class="tablescroll"><table class="history">
     <tr><th>#</th><th>球種</th><th>コース</th><th>結果</th></tr>
     {rows}
-  </table>
+  </table></div>
 </div>"""
 
 
@@ -571,8 +582,17 @@ def render_side_actions(state, difficulty):
         extras += '<form method="post" action="/walk" style="display:inline">'\
                  '<button>敬遠</button></form> '
     if state.can_change_pitcher():
-        extras += '<form method="post" action="/change" style="display:inline">'\
-                 '<button>継投</button></form> '
+        if len(state.bullpen) == 1:
+            extras += ('<form method="post" action="/change" style="display:inline">'
+                      '<input type="hidden" name="index" value="0">'
+                      f'<button>継投（{_e(state.bullpen[0].name)}）</button></form> ')
+        else:
+            pitcher_opts = "".join(
+                f'<option value="{i}">{_e(p.name)}（{"右" if p.throws == "R" else "左"}投）</option>'
+                for i, p in enumerate(state.bullpen))
+            extras += ('<form method="post" action="/change" style="display:inline">'
+                      f'<select name="index">{pitcher_opts}</select>'
+                      '<button>継投</button></form> ')
     course_opts = "".join(f'<option value="{c}">{_e(v)}</option>' for c, v in COURSE_SHORT.items())
     hint = ""
     if difficulty == "beginner":
@@ -789,8 +809,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/change":
             SESSION.reaction, SESSION.last_call = None, None
-            if state.change_pitcher():
-                SESSION.messages = [f">>> 継投。マウンドに {state.pitcher.name}。"
+            try:
+                index = int(form.get("index", "0"))
+            except ValueError:
+                index = 0
+            new_pitcher = state.change_pitcher(index)
+            if new_pitcher:
+                SESSION.messages = [f">>> 継投。マウンドに {new_pitcher.name}。"
                                    "球数はリセット。持ち球・調子は投げてみるまで分からない。"]
             self._redirect()
             return

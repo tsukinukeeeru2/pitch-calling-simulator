@@ -112,7 +112,7 @@ class Pitcher:
         }
 
 
-def build_sample_pitcher(rng=None):
+def build_sample_pitcher(rng=None, name="リリーフ"):
     """終盤に出てくるリリーフ投手を 1 人作る。"""
     rng = rng or random
     throws = "R" if rng.random() < 0.7 else "L"
@@ -123,7 +123,7 @@ def build_sample_pitcher(rng=None):
         ["sinker", "cutter", "slider", "changeup"],
     ])
     return Pitcher(
-        name="リリーフ", throws=throws,
+        name=name, throws=throws,
         control=rng.randint(45, 72), command=rng.randint(42, 70),
         velocity=rng.randint(45, 78), stuff=rng.randint(45, 75),
         repertoire=repertoire,

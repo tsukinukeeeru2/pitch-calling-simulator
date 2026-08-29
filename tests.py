@@ -734,6 +734,32 @@ class MLBDataAdapterTests(unittest.TestCase):
         b = mlb_data_adapter.normalize_batter_record(raw)
         self.assertEqual(a, b)   # 同じ選手なら hot_course 等の「山勘」も毎回同じ
 
+    def test_normalize_uses_real_zone_profile_when_given(self):
+        """zone_profile(実データのゾーン別成績)を渡したら、山勘ではなく
+        そのデータから hot_course/weak_course を決める。
+        """
+        raw = {"name": "Zone Player", "bats": "R", "avg": 0.280, "obp": 0.350, "slg": 0.450,
+              "zone_profile": {"out_lo": 0.120, "in_hi": 0.480, "mid_mid": 0.300}}
+        rec = mlb_data_adapter.normalize_batter_record(raw)
+        self.assertEqual(rec["hot_course"], "in_hi")     # 一番数値が高い
+        self.assertEqual(rec["weak_course"], "out_lo")   # 一番数値が低い
+
+    def test_normalize_ignores_unknown_keys_and_needs_at_least_two_zones(self):
+        raw = {"name": "Sparse Zone Player", "bats": "R", "avg": 0.260, "obp": 0.320, "slg": 0.400,
+              "zone_profile": {"not_a_course": 0.9, "in_hi": 0.5}}
+        rec = mlb_data_adapter.normalize_batter_record(raw)
+        # 有効なコースが1つしかないので、山勘にフォールバックする
+        fallback = mlb_data_adapter.normalize_batter_record(
+            {"name": "Sparse Zone Player", "bats": "R", "avg": 0.260, "obp": 0.320, "slg": 0.400})
+        self.assertEqual(rec["hot_course"], fallback["hot_course"])
+        self.assertEqual(rec["weak_course"], fallback["weak_course"])
+
+    def test_normalize_without_zone_profile_falls_back_to_seeded_guess(self):
+        raw = {"name": "No Zone Player", "bats": "R", "avg": 0.260, "obp": 0.320, "slg": 0.400}
+        rec = mlb_data_adapter.normalize_batter_record(raw)
+        self.assertEqual(rec["hot_course"],
+                        mlb_data_adapter._seeded_pick("No Zone Player", "hot", list(COURSES)))
+
     def test_normalize_fills_missing_advanced_stats_with_defaults(self):
         raw = {"name": "Minimal", "bats": "R", "avg": 0.260, "obp": 0.320, "slg": 0.400}
         rec = mlb_data_adapter.normalize_batter_record(raw)
@@ -791,16 +817,35 @@ class GameplayExtrasTests(unittest.TestCase):
         self.assertNotEqual(st.lineup.spot_number(), spot_before)
         self.assertIn("敬遠", st.events)
 
-    def test_change_pitcher_once_and_resets_pitch_count(self):
+    def test_change_pitcher_resets_pitch_count(self):
         st = _state(2)
         old = st.pitcher
         st.pitcher.pitches_thrown = 20
         self.assertTrue(st.can_change_pitcher())
-        self.assertTrue(st.change_pitcher())
+        self.assertIsNotNone(st.change_pitcher())
         self.assertIsNot(st.pitcher, old)
         self.assertEqual(st.pitcher.pitches_thrown, 0)   # 新しい投手はフレッシュ
-        self.assertFalse(st.can_change_pitcher())        # 2 回目は不可
-        self.assertFalse(st.change_pitcher())
+        self.assertEqual(st.pitching_changes, 1)
+
+    def test_can_change_pitcher_as_many_times_as_bullpen_allows(self):
+        st = _state(2)
+        st.bullpen = [build_sample_pitcher(random.Random(1), name="A"),
+                     build_sample_pitcher(random.Random(2), name="B")]
+        self.assertTrue(st.can_change_pitcher())
+        self.assertEqual(st.change_pitcher().name, "A")
+        self.assertTrue(st.can_change_pitcher())          # ブルペンにまだ1人いる
+        self.assertEqual(st.change_pitcher().name, "B")
+        self.assertFalse(st.can_change_pitcher())         # ブルペンが空
+        self.assertIsNone(st.change_pitcher())
+
+    def test_change_pitcher_by_index_picks_the_chosen_reliever(self):
+        st = _state(2)
+        st.bullpen = [build_sample_pitcher(random.Random(1), name="A"),
+                     build_sample_pitcher(random.Random(2), name="B")]
+        new_pitcher = st.change_pitcher(index=1)
+        self.assertEqual(new_pitcher.name, "B")
+        self.assertEqual(len(st.bullpen), 1)
+        self.assertEqual(st.bullpen[0].name, "A")
 
     def test_steal_needs_runner_on_first_only(self):
         st = _state(3)
@@ -1200,6 +1245,16 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(webapp.SESSION.pending_swap, "CF")
         self._post("/swap", {"position": "CF"})
         self.assertIsNone(webapp.SESSION.pending_swap)
+
+    def test_change_pitcher_picks_the_selected_bullpen_index(self):
+        self._start_game()
+        webapp.SESSION.state.bullpen = [build_sample_pitcher(random.Random(1), name="控えA"),
+                                       build_sample_pitcher(random.Random(2), name="控えB")]
+        status = self._post("/change", {"index": "1"})
+        self.assertEqual(status, 200)
+        self.assertEqual(webapp.SESSION.state.pitcher.name, "控えB")
+        self.assertEqual(len(webapp.SESSION.state.bullpen), 1)
+        self.assertTrue(webapp.SESSION.state.can_change_pitcher())   # まだ1人残っている
 
     def test_memo_records_a_read(self):
         self._start_game()

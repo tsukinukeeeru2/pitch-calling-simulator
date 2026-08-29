@@ -1,6 +1,7 @@
 {
   "_source": "手作りのサンプルデータ(architecture demo用)。実在選手9人の左右打・おおよその成績イメージを参考にした概算値で、公式の正確な数値ではありません。実際の値は MLB Stats API (https://statsapi.mlb.com/) や Baseball Savant (https://baseballsavant.mlb.com/) で確認してください。1チームの実際の打順ではなく、様々なチームの選手を混成したサンプル打線です。",
   "_format": "mlb_data_adapter.normalize_batter_record() が読む「生データ」の形。MLB Stats API / Savant のリーダーボードに近い列名にしてある(avg/obp/slg はそのまま、whiff_pct・chase_pct・pull_pct・k_pct・bb_pct・gb_pct・speed_pct は 0-100 のパーセンタイル/割合)。",
+  "_zone_profile_note": "各選手に任意で \"zone_profile\": {コース名: 数値(高いほど得意)} を追加すると、hot_course/weak_course が選手名からの山勘ではなく実データから計算される(コース名は constants.COURSES の9キー。例: {\"out_lo\": 0.12, \"in_hi\": 0.48})。このサンプルには含めていない ―― Baseball Savant のゾーン別成績を実在選手に結びつけて記載するには実データでの裏取りが要るため、この開発環境(外部ネットワーク遮断)では正確性を確認できなかった。ネットワークが使える環境で Savant の「Statcast のホット/コールドゾーン」を確認し、自分でこのキーを足せば本物になる。",
   "batters": [
     {"name": "Mookie Betts", "bats": "R", "avg": 0.307, "obp": 0.408, "slg": 0.579,
      "whiff_pct": 16, "chase_pct": 22, "pull_pct": 42, "k_pct": 14, "bb_pct": 11,

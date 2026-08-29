@@ -45,7 +45,7 @@ class MatchState:
         self.pitch_log = []              # 1 球 = dict。試合後分析に使う
         self.spray = []                  # フェア打球の記録(#B 打球傾向チャート)
         self.reads = {}                  # 捕手メモ id(batter) -> {"spot","wait","weak"}
-        self.bullpen = None              # 継投用の控え投手(main が用意)
+        self.bullpen = []                # 継投用の控え投手(複数可。先頭から出ていく順ではなく選んで出す)
         self.pitching_changes = 0
         self.events = []                 # 盗塁など、打席途中の出来事のログ
         self.sign_leak = 0.0             # サインを見破られた次の1球だけ、打者の狙いを強める(#B)
@@ -80,15 +80,20 @@ class MatchState:
 
     # ---- 継投(#ゲーム性) ----
     def can_change_pitcher(self):
-        return self.pitching_changes == 0 and self.bullpen is not None
+        return bool(self.bullpen)
 
-    def change_pitcher(self):
-        """控え投手に交代(この 1 ゲームで 1 回だけ)。球数はリセットされる。"""
-        if not self.can_change_pitcher():
-            return False
-        self.pitcher, self.bullpen = self.bullpen, self.pitcher
+    def change_pitcher(self, index=0):
+        """控え投手(bullpen[index])に交代。ブルペンにいる人数だけ何回でも交代できる。
+
+        降板した投手はこの試合には戻らない(現実のルールどおり)ので、古い投手は
+        破棄する。球数はリセットされ、新しい投手の持ち球・調子は投げてみるまで
+        分からない(#D)。返り値は交代後の新しい投手(交代できなければ None)。
+        """
+        if not self.can_change_pitcher() or not (0 <= index < len(self.bullpen)):
+            return None
+        self.pitcher = self.bullpen.pop(index)
         self.pitching_changes += 1
-        return True
+        return self.pitcher
 
     # ---- 敬遠(#ゲーム性) ----
     def intentional_walk(self):
@@ -344,10 +349,12 @@ def generate_random_situation(rng=None, lineup_batters=None):
     start_index = rng.randrange(9)
     batters = lineup_batters if lineup_batters is not None else build_sample_lineup(rng)
     lineup = Lineup(list(batters), index=start_index)
-    pitcher = build_sample_pitcher(rng)
+    pitcher = build_sample_pitcher(rng, name="リリーフ1")
     defense = make_default_defense()
 
     state = MatchState(inning, is_extra, half, we_are, our_score, opp_score,
                        outs, runners, lineup, pitcher, defense)
-    state.bullpen = build_sample_pitcher(rng)   # 継投用の控え
+    bullpen_size = _weighted(rng, [1, 2, 3], [2, 5, 3])   # ブルペンには 1〜3 人待機
+    state.bullpen = [build_sample_pitcher(rng, name=f"リリーフ{i + 2}")
+                     for i in range(bullpen_size)]
     return state

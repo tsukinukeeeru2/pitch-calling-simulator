@@ -15,15 +15,30 @@ Game Engine 側(judge.py 以下)は Batter オブジェクトの形しか知ら�
 
 対応できる範囲(重要な割り切り):
     avg / obp / slg / bats のような公開成績は生データからそのまま使える。
-    しかし discipline・aggression・hot_course・weak_pitch・guess_bias・
+    しかし discipline・aggression・weak_pitch・guess_bias・
     two_strike_ability・pressure_tolerance のような「このゲーム独自の
-    隠しパラメータ」は、一般に公開されている統計だけでは決まらない
-    (どのコースが苦手か、といったゾーン別成績は Savant の詳細検索が
-    必要で、この簡易 Adapter の対象外)。
+    隠しパラメータ」は、一般に公開されている統計だけでは決まらない。
     そこで、公開統計から合理的に近い値を "推定" するか、
     決まらない部分は選手名から決定的に(=同じ選手なら毎回同じ値に)
-    振る。乱数で山勘を作っているだけで、実際の苦手コースとは一致しない
-    ―― この点は既存の SAMPLE_LINEUP(架空選手)と同じ扱い。
+    振る。乱数で山勘を作っているだけで、実際の傾向とは一致しない。
+
+hot_course / weak_course(得意/苦手コース)について:
+    生データ(raw)に "zone_profile"（9 分割コースごとの成績、数値が高いほど
+    得意）を含めれば、_hot_weak_from_zone_profile() が実データから
+    hot_course/weak_course を計算する ―― Baseball Savant がプレイヤーページで
+    公開している「ゾーン別成績」をこのゲームの 9 分割コース表記
+    （constants.COURSES のキー）に人手で置き換えて zone_profile に渡せば、
+    本物の得意/苦手コースになる。zone_profile を渡さなければ、従来どおり
+    選手名からの決定的な「山勘」にフォールバックする(既存の SAMPLE_LINEUP
+    (架空選手)と同じ扱い)。
+    この Adapter は Baseball Savant のゾーン別データを自動取得はしない
+    ―― Savant の zone 番号(1-14, 捕手視点)は打者の左右で意味が変わるため、
+    このゲーム側の「常に打者視点で内角/外角」という表記へ正しく変換できて
+    いるか実データで検証する手段がこの開発環境にはなかった(組織ポリシーで
+    外部ネットワークへの接続がすべて遮断されており、www.google.com への
+    接続すら 403 で拒否されることをプロキシのステータスで確認済み)。
+    正しい変換を検証できないまま「実データ取得」を名乗るのは危険と判断し、
+    今回は「渡された zone_profile を正しく使う」受け口とテストだけを実装した。
 """
 
 import json
@@ -61,6 +76,25 @@ def _seeded_pick(name, key, choices):
     本物のホット/コールドゾーンではない(README に明記)。
     """
     return random.Random(f"{name}:{key}").choice(choices)
+
+
+def _hot_weak_from_zone_profile(zone_profile):
+    """9 分割コースごとの成績(数値が高いほど打者が得意)から hot/weak を決める。
+
+    zone_profile は {course_key: 数値} の dict(COURSES の 9 キーの一部でよい)。
+    Baseball Savant のような実データから作れる想定 ―― キーはこのゲームの
+    9 分割コース表記(constants.COURSES)に合わせて渡すこと(打者の左右で
+    「内角/外角」の意味が変わる点はすでにこのゲーム側の表記に揃えてある)。
+    有効な値が 2 つ未満なら None を返し、呼び出し側は「山勘」にフォールバックする。
+    """
+    valid = {c: v for c, v in (zone_profile or {}).items() if c in COURSES and v is not None}
+    if len(valid) < 2:
+        return None
+    hot_course = max(valid, key=valid.get)
+    weak_course = min(valid, key=valid.get)
+    if hot_course == weak_course:
+        return None
+    return hot_course, weak_course
 
 
 def normalize_batter_record(raw):
@@ -102,6 +136,13 @@ def normalize_batter_record(raw):
     else:
         coarse_type = "average"
 
+    zone_pick = _hot_weak_from_zone_profile(raw.get("zone_profile"))
+    if zone_pick is not None:
+        hot_course, weak_course = zone_pick
+    else:
+        hot_course = _seeded_pick(name, "hot", list(COURSES))
+        weak_course = _seeded_pick(name, "weak", list(COURSES))
+
     return {
         "name": name, "bats": bats, "coarse_type": coarse_type,
         "avg": round(avg, 3), "obp": round(obp, 3), "slg": round(slg, 3),
@@ -111,8 +152,8 @@ def normalize_batter_record(raw):
         "pull": round(_clamp(pull, 0.20, 0.75), 2), "gb_tendency": round(_clamp(gb, 0.25, 0.65), 2),
         # 球種別成績(vs_fastball 等)はこの簡易データには含まれないので中立値
         "vs_fastball": 0.5, "vs_breaking": 0.5, "vs_offspeed": 0.5,
-        "hot_course": _seeded_pick(name, "hot", list(COURSES)),
-        "weak_course": _seeded_pick(name, "weak", list(COURSES)),
+        "hot_course": hot_course,
+        "weak_course": weak_course,
         "weak_pitch": _seeded_pick(name, "weak_pitch", all_pitch_keys()),
         "guess_bias": round(_clamp(0.5 + (chase - 0.28) * 0.6, 0.30, 0.80), 2),
         "two_strike_ability": round(two_strike_ability, 2),
