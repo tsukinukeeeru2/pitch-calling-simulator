@@ -1189,7 +1189,13 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('action="/pitch"', game)
 
     def test_post_pitch_advances_the_count_or_the_at_bat(self):
+        # 乱数シードなしだと稀に(アウトカウント2から始まり1球で3アウト確定、という
+        # ごく低確率のケースで)この1球でCATCHER REPORTに行ってしまいテストが
+        # フレーキーになる。0アウトから始まる seed を固定して、1球で3アウトには
+        # 絶対ならない(最大でも併殺で+2アウト)状態にする。
+        webapp.SESSION = webapp.GameSession(seed=3)
         page = self._start_game()
+        self.assertEqual(webapp.SESSION.state.outs, 0)
         pitch_key = self._first_pitch_key(page)
         status = self._post("/pitch", {"pitch_type": pitch_key, "course": "mid_mid",
                                        "intent": "strike"})
